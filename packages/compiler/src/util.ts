@@ -13,9 +13,9 @@ export class Queue<T> {
   last() {
     return this._last?.v!;
   }
-  size = 0;
+  len = 0;
   push(it: T) {
-    this.size++;
+    this.len++;
     const { _last: last } = this;
     const item = { v: it } as QueueItem<T>;
     if (!last) {
@@ -29,7 +29,7 @@ export class Queue<T> {
   shift() {
     const { _first: first } = this;
     if (!first) return undefined;
-    this.size--;
+    this.len--;
 
     const { next } = first;
     first.next = undefined;
@@ -58,6 +58,24 @@ export function isNum(char: string) {
     char === '8' ||
     char === '9'
   );
+}
+
+export const genKey = (v: string|number) => `${v}-${Date.now()}-${Math.random()}` as unknown as number
+
+export class SortMap<T> {
+  data: Record<string | symbol, T[]> = {};
+  clear() {
+    this.data = {};
+  }
+  add(key: string | symbol, value: T) {
+    const { data } = this;
+    let list = data[key];
+    if (!list) {
+      list = [];
+      data[key] = list;
+    }
+    list.push(value);
+  }
 }
 
 // const queue = new Queue([1,2,3,4]);
