@@ -1,7 +1,14 @@
-import { $, watch, Scheduler, $abort } from '../index';
+import { $, watch, Scheduler, scope } from '../index';
 import { Log } from '../../../shared/__test__/log-order';
 import { DepStr } from './dep-str';
-import { ide } from '../scheduler';
+import { ide } from '../scope';
+beforeEach(() => {
+  jest.useFakeTimers();
+});
+
+afterEach(() => {
+  jest.useRealTimers();
+})
 
 describe('watch 功能测试', () => {
   it('基本 watch 功能 - 监听单一信号变化', () => {
@@ -124,7 +131,7 @@ describe('watch 功能测试', () => {
     const unwatchedSignal = $(10);
 
     watch([() => watchedSignal()], () => {
-      log.call('watcher执行');
+      log.call(`watcher执行${unwatchedSignal()}`);
     });
 
     // 初始化不应执行
@@ -132,7 +139,7 @@ describe('watch 功能测试', () => {
 
     // 改变被监听的信号
     watchedSignal(2);
-    log.toBe('watcher执行');
+    log.toBe('watcher执行10');
 
     // 改变未被监听的信号，不应触发 watch
     unwatchedSignal(20);
@@ -165,88 +172,40 @@ describe('watch 功能测试', () => {
     });
   });
 
-  it('watch 的 abort 功能', done => {
+  it('使用 scope 取消监听', done => {
     const log = new Log();
     const signal = $(1);
-    const abortFn = $abort();
-
-    watch(
-      [() => signal()],
-      () => {
+    let watcher: any;
+    const dispose = scope(() => {
+      watcher = watch([() => signal()], () => {
         log.call('watcher执行');
-      },
-      { abort: abortFn }
-    );
+      });
+    });
+    const str = new DepStr({
+      signal,
+      watcher,
+      dispose
+    });
 
-    // 初始状态
-    log.toBe();
-
-    // 改变信号，触发 watch
+    // 改变信号值，触发 watch
     signal(2);
     log.toBe('watcher执行');
 
-    abortFn();
+    str.dep(`
+      signal -> watcher -> dispose   
+      `);
 
-    // 再次改变信号，不应触发 watch
+    // 调用 dispose 函数来取消监听
+    dispose();
+
+    // 在取消监听后改变信号，不应该再触发 watch
     signal(3);
-    log.toBe(); // 没有新的执行
+    log.toBe(); 
+    // 通过 scope 嫩自动找出外部依赖并断开
     ide(() => {
-      log.toBe(); // 没有新的执行，表示依赖已经被删除
+      str.dep(`watcher -> dispose`);
       done();
     });
-
-    // 中止监听
+    jest.runAllTimers();
   });
-
-  // it('条件依赖中的 watch 行为', () => {
-  //   const log = new Log();
-  //   const condition = $(true);
-  //   const value1 = $(10);
-  //   const value2 = $(20);
-
-  //   const activeValue = $(() => condition() ? value1() : value2());
-
-  //   watch([() => activeValue()], () => {
-  //     log.call(`activeValue变化: ${activeValue()}`);
-  //   });
-
-  //   // 初始化不应执行
-  //   log.toBe();
-
-  //   // 改变当前激活的值
-  //   value1(15);
-  //   log.toBe('activeValue变化: 15');
-
-  //   // 改变条件，切换依赖
-  //   condition(false);
-  //   log.toBe('activeValue变化: 20'); // 现在依赖 value2
-
-  //   // 现在改变原来的值（不再被依赖），不应触发 watch
-  //   value1(25);
-  //   log.toBe(); // 没有新的执行
-
-  //   // 改变当前依赖的值，应触发 watch
-  //   value2(30);
-  //   log.toBe('activeValue变化: 30');
-  // });
-
-  // it('重复值设置不应触发 watch', () => {
-  //   const log = new Log();
-  //   const signal = $(1);
-
-  //   watch([() => signal()], () => {
-  //     log.call('watcher执行');
-  //   });
-
-  //   // 初始化不应执行
-  //   log.toBe();
-
-  //   // 设置相同的值，不应触发
-  //   signal(1);
-  //   log.toBe(); // 没有执行
-
-  //   // 设置不同的值，应触发
-  //   signal(2);
-  //   log.toBe('watcher执行');
-  // });
 });

@@ -1,19 +1,14 @@
 import { Queue } from '../../shared/util';
 export const ide =
   globalThis.requestIdleCallback ||
-  ((fn: Function) => {
-    if (globalThis.requestAnimationFrame) {
-      globalThis.requestAnimationFrame(() => {
-        setTimeout(() => {
-          fn();
-        });
-      });
-    } else {
-      setTimeout(() => {
-        fn();
-      });
-    }
-  });
+  (globalThis.requestAnimationFrame
+    ? (fn: Function) =>
+        globalThis.requestAnimationFrame(() => {
+          setTimeout(() => {
+            fn();
+          });
+        })
+    : globalThis.setTimeout);
 
 export class IdeScheduler {
   constructor() {}
@@ -31,7 +26,7 @@ export class IdeScheduler {
 
   scheduleTask() {
     const { taskQueue } = this;
-    console.log('调度 abort');
+    // console.log('调度 dispose');
     const fn = taskQueue.first;
     if (!fn) return (this.isScheduling = false);
 

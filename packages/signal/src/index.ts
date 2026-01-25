@@ -1,13 +1,18 @@
 import { Queue, SortMap } from '../../shared/util';
-import { IdeScheduler } from './scheduler';
+import { IdeScheduler } from './scope';
 
 export enum State {
   Clean = 0b0000,
-  Unknown = 0b1000,
-  Dirty = 0b0100,
-  Check = 0b0010,
-  Disabled = 0b0001
+  /** 仅用于 scope 节点是否 abort */
+  ScopeAbort = 0b100000,
+  OutLink = 0b010000,
+  Unknown = 0b001000,
+  Dirty = 0b000100,
+  Check = 0b000010,
+  ScopeReady = 0b000001
 }
+
+const DirtyState = State.Unknown | State.Dirty;
 
 type Getter<T = any> = {
   (): T;
@@ -33,15 +38,17 @@ const markDeep = (signal: Signal) => {
     begin: ({ node }) => {
       /**
        * 1. 当前节点在预检  应该跳过
-       * 2. 当前节点       受到了上游节点影响
-       * 3. 当前接单确定    变化，且未被读取
+       * 2. 当前节点       已标记
+       * 3. 当前节点       已放弃
        */
+      // console.log('markBegin', node.id);
+
       if (node.state & (State.Check | State.Unknown | State.Dirty) || node.isAbort()) {
         return true;
       }
 
       const isEffect = level > 0;
-      const isLeaf = !node.emitStart;
+      const isLeaf = !node.emitStart || node.emitStart.downstream['scope'] === node.emitStart.downstream;
       if (isEffect) {
         node.state |= State.Unknown;
       } else {
@@ -61,23 +68,48 @@ const markDeep = (signal: Signal) => {
   }
   dirtyLeafs.clear();
 };
+const unTrackIsland = (signal: Signal) => {
+  // 原来是孤岛，且被 scope 管理的要恢复
+  if (signal.emitStart && signal.emitStart.downstream === signal.scope) {
+    Line.unlink(signal.emitStart);
+  }
+};
+const trackIsland = (signal: Signal) => {
+  const line = new Line();
+  // 上游节点处于孤岛状态，切有引用外部信号，需要被 scope 管理来删除外部依赖
+  if (!signal.emitStart && signal.state & State.OutLink) {
+    const { recEnd } = signal.scope;
+    Line.emit_line(signal, line)
+    Line.rec_line(signal.scope, line)
+    Line.line_line_rec(recEnd, line)
+  }
+};
+const markOutLink = (signal: Signal, downstream: Signal) => {
+  // 上游是外部节点，或者上游引用了外部节点的， 做传播
+  if (signal.scope !== downstream.scope || signal.state & State.OutLink) {
+    downstream.state |= State.OutLink;
+  }
+  // else {
+  //   downstream.state &= ~State.OutLink;
+  // }
+};
 
 type SignalOpt<T> = {
   customPull?: () => T;
   scheduler?: string;
-  abort?: CustomSignalOpt['abort'];
+  isScope?: boolean;
 };
 
 class Signal<T = any> implements Vertex {
   version = -1;
   id = id++;
   state = State.Clean;
-  abort: AbortSignal = null;
+  /** 当前节点创建时处于的 effect 就是 scope */
+  scope: Signal = Signal.Pulling;
   recEnd: Line = null;
   recStart: Line = null;
   emitStart: Line = null;
   emitEnd: Line = null;
-  prev: T = null;
   scheduler: string = null;
   value: T = null;
   static Pulling: Signal = null;
@@ -91,13 +123,12 @@ class Signal<T = any> implements Vertex {
     private customPull?: () => T
   ) {}
 
-  static create<T>(nextValue: T, { customPull, ...rest }: SignalOpt<T>) {
+  static create<T>(nextValue: T, { customPull, isScope, ...rest }: SignalOpt<T>) {
     const s = new Signal(nextValue, customPull);
     s.pull = s.customPull || s.DEFAULT_PULL;
     Object.assign(s, rest);
-    if (!customPull) {
-      Line.link(rest.abort.ins, s);
-      // AbortLine.link(abort.ins, s);
+    if (isScope) {
+      s.scope = s;
     }
     return s;
   }
@@ -112,26 +143,30 @@ class Signal<T = any> implements Vertex {
   pullRecurse(shouldLink = true) {
     let downstream = Signal.Pulling;
 
-    if (shouldLink) {
+    if (shouldLink && downstream) {
+      // 如果上游节点被 scope 管理了，解除管理
+      unTrackIsland(this);
       Line.link(this, downstream);
     }
-    if (this.version === version) {
-      return this.value;
-    }
-
-    // 进 pullShallow 前重置 recEnd，让子 getter 重构订阅链表
-    this.recEnd = undefined;
-
-    Signal.Pulling = this;
     try {
+      if (this.version === version) {
+        return this.value;
+      }
+      this.state &= ~State.OutLink;
+
+      // 进 pullShallow 前重置 recEnd，让子 getter 重构订阅链表
+      this.recEnd = undefined;
+
+      Signal.Pulling = this;
+
       const v = this.pull();
       // 如果使用了 DEFAULT_PULL，处理一次 set 的取值后，替换回 customPull，如果有的话
       this.pull = this.customPull || this.DEFAULT_PULL;
-      if (this.value !== v) {
-        this.value = v;
-        // 依赖上游的 版本号
-        this.version = version;
-      }
+      this.value = v;
+      // 依赖上游的 版本号
+      this.version = version;
+      // if (this.value !== v) {
+      // }
       return this.value;
     } catch (error) {
       console.error('计算属性报错这次不触发，后续状态可能出错', error);
@@ -140,6 +175,10 @@ class Signal<T = any> implements Vertex {
       // 本 getter 执行完成时上游 getter 通过 link，完成对下游 recLines 的更新
       const toDel = this.recEnd?.nextRecLine;
       Line.unlinkRec(toDel);
+      if (shouldLink && downstream) {
+        // 用于 scope 指示哪些节点依赖 scope 外部
+        markOutLink(this, downstream);
+      }
       Signal.Pulling = downstream;
     }
   }
@@ -148,7 +187,7 @@ class Signal<T = any> implements Vertex {
     /*----------------- 有上游节点，通过 dfs 重新计算结果 -----------------*/
     const signal = this;
     // 优化执行
-    if (signal.state === State.Clean) {
+    if (!(signal.state & DirtyState)) {
       return this.value;
     }
     dfs(signal, {
@@ -160,45 +199,57 @@ class Signal<T = any> implements Vertex {
          * 不需要检查
          * 1. 正在查
          * 2. 干净
-         * 当前正在检查，生成检查屏障，
-         * 同时避免 重复检查，重复标记
+         * 3. 放弃 或者为 scope 节点
          */
-        if (node.state & State.Check || node.state === State.Clean || node.isAbort()) {
+        if (node.state & State.Check || !(node.state & DirtyState) || node.isAbort()) {
           return true;
         }
         node.state |= State.Check;
+        // 交给下游重新计算是否 引用外部节点
+        node.state &= ~State.OutLink;
       },
-      complete: ({ node, notGoDeep: currentClean, walkedLine, lineToDeep }) => {
+      complete: ({ node, notGoDeep: currentClean, walkedLine }) => {
         let noGoSibling = false;
-        // console.log('complete', node.id);
         const last = walkedLine[walkedLine.length - 1];
-
+        const downstream = last?.downstream as Signal;
         // 当前正在检查，生成检查屏障，同时避免重新标记 和
         if (currentClean) {
         }
         // 当前节点需要重新计算
         else if (node.state & State.Dirty) {
-          const prevPulling = Signal.Pulling;
-          Signal.Pulling = last?.downstream as Signal;
-          const prevVersion = node.version;
-          // 递归转用递归拉取，且不需要重建 link 因为dfs的前提就是上游节点依赖于 本节点
-          node.pullRecurse(false);
-          // dirty 传播， 由于本节点值已被计算出，因此消除 dirty
-          // ps: 如果是源头节点 pullRecurse 就只是返回其值，并消除 dirty
-          if (prevVersion !== node.version) {
+          // 优化：源节点变化，直接让下游节点重新计算
+          if (!node.recStart && node.value !== node.nextValue) {
             node.markDownStreamsDirty();
+            node.state &= ~State.Dirty;
+            node.state &= ~State.Check;
+            return;
           }
-          node.state &= ~State.Dirty;
-          Signal.Pulling = prevPulling;
-          // 立刻返回父节点重新计算
-          noGoSibling = true;
+          // 预检数据
+          else {
+            const prevPulling = Signal.Pulling;
+            Signal.Pulling = downstream;
+            const prevValue = node.value;
+            // 递归转用递归拉取，且不需要重建 link 因为dfs的前提就是上游节点依赖于 本节点
+            node.pullRecurse(false);
+            // dirty 传播， 由于本节点值已被计算出，因此消除 dirty
+            if (prevValue !== node.value) {
+              node.markDownStreamsDirty();
+            }
+            node.state &= ~State.Dirty;
+            Signal.Pulling = prevPulling;
+            // 立刻返回父节点重新计算
+            noGoSibling = true;
+          }
         }
-        // 上游节点没标记 本节点需要重新计算，则说明是干净的
+        // 没被上游节点标记为 Dirty，说明是干净的
         else if (node.state & State.Unknown) {
-          node.state = State.Clean;
+          node.state &= ~State.Unknown;
         }
         node.version = version;
         node.state &= ~State.Check;
+        if (downstream) {
+          markOutLink(node, downstream);
+        }
         return noGoSibling;
       }
     });
@@ -210,8 +261,7 @@ class Signal<T = any> implements Vertex {
       return this.value;
     }
     // 没有上游节点，应该通过递归重新建立
-    // 或者上游节点是 abort，此时 pullRecurse 之后拉本节点的数据
-    if (!this.recStart || (this.recStart.upstream && this.recStart.upstream['abort'] == null)) {
+    if (!this.recStart) {
       return this.pullRecurse(true);
     }
     // 有上游节点则采用 dfs 直接遍历，查看情况
@@ -251,7 +301,12 @@ class Signal<T = any> implements Vertex {
   }
 
   isAbort() {
-    return !this.abort || this.abort.disabled;
+    return (
+      // scope 被取消
+      (this.scope && this.scope.state & State.ScopeAbort) ||
+      // 是 scope 节点，且处于 ready 状态，不需要重复执行
+      (this === this.scope && this.state & (State.ScopeAbort | State.ScopeReady))
+    );
   }
 }
 
@@ -264,7 +319,13 @@ type Vertex = {
   emitStart: Line;
 };
 
-type DFSCtx = {
+type DFSCtxBegin = {
+  node: Signal;
+  lineFromUp: Line;
+  walkedLine: Line[];
+  notGoDeep?: boolean;
+};
+type DFSCtxCompete = {
   node: Signal;
   lineToDeep: Line;
   walkedLine: Line[];
@@ -273,17 +334,19 @@ type DFSCtx = {
 
 const DefaultDFSOpt = {
   isUp: false,
-  begin: undefined as (dfsCtx: DFSCtx) => any,
-  complete: undefined as (dfsCtx: DFSCtx) => any,
-  breakStack: [] as Line[]
+  begin: undefined as (dfsCtx: DFSCtxBegin) => any,
+  complete: undefined as (dfsCtx: DFSCtxCompete) => any,
+  breakStack: [] as Line[],
+  breakLine: undefined as Line,
+  breakNode: undefined as Signal
 };
 
 type DFSOpt = typeof DefaultDFSOpt;
 
-function dfs(v: Vertex, opt: Partial<DFSOpt> = {}) {
-  const { isUp, begin, complete, breakStack: lineStack } = { ...DefaultDFSOpt, ...opt };
-  let node = v;
-  let line: Line;
+function dfs(root: Vertex, opt: Partial<DFSOpt> = {}) {
+  const { isUp, begin, complete, breakStack: lineStack, breakLine } = { ...DefaultDFSOpt, ...opt };
+  let node = opt.breakNode || root;
+  let line: Line = breakLine;
   const listKey = isUp ? 'recStart' : 'emitStart';
   const nodeKey = isUp ? 'upstream' : 'downstream';
   // 向上意味着要找所有节点的入度
@@ -293,11 +356,12 @@ function dfs(v: Vertex, opt: Partial<DFSOpt> = {}) {
   while (1) {
     let notGoDeep = begin?.({
       node: node as Signal,
-      lineToDeep: line,
+      lineFromUp: line,
       walkedLine: lineStack
     });
     lineStack.push(line);
     line = node[listKey];
+
     if (line && !notGoDeep) {
       const firstChild = line[nodeKey];
       node = firstChild;
@@ -315,7 +379,7 @@ function dfs(v: Vertex, opt: Partial<DFSOpt> = {}) {
       // notGoDeep = false;
       line = lineStack.pop();
       // 递归出口，回到起点
-      if (node === v) {
+      if (node === root) {
         return;
       }
       notGoDeep = false;
@@ -335,8 +399,6 @@ function dfs(v: Vertex, opt: Partial<DFSOpt> = {}) {
 
 class Line {
   static link(v1: Signal, v2: Signal) {
-    if (!v2) return;
-
     let { emitEnd } = v1,
       { recEnd, recStart } = v2,
       noRecEnd = !recEnd,
@@ -410,6 +472,9 @@ class Line {
     }
     if (nextRecLine) {
       nextRecLine.prevRecLine = prevRecLine;
+    } else {
+      // 删除尾节点
+      downstream.recEnd = prevRecLine;
     }
   }
 
@@ -418,7 +483,10 @@ class Line {
     let toDel = line;
     while (toDel) {
       const memoNext = toDel.nextRecLine;
+      const upstream = toDel.upstream as Signal;
       Line.unlink(toDel);
+      // 删除完后看看是否要被 scope 管理
+      trackIsland(upstream);
       toDel = memoNext;
     }
   }
@@ -522,20 +590,20 @@ function microScheduler(effects: Signal[]) {
   });
 }
 
-let c: MessageChannel, macroQueue: Queue<Function>;
+let channel: MessageChannel, macroQueue: Queue<Function>;
 if (globalThis.MessageChannel) {
-  c = new MessageChannel();
+  channel = new MessageChannel();
   macroQueue = new Queue();
-  c.port2.onmessage = () => {
+  channel.port2.onmessage = () => {
     while (macroQueue.first) {
       macroQueue.shift()();
     }
   };
 }
 function macroScheduler(effects: Signal[]) {
-  if (c) {
+  if (channel) {
     macroQueue.push(() => defaultScheduler(effects));
-    c.port1.postMessage('');
+    channel.port1.postMessage('');
   }
   setTimeout(() => {
     defaultScheduler(effects);
@@ -547,76 +615,103 @@ function schedulerLayout(effects: Signal[]) {
   });
 }
 
-const abortSymbol = Symbol('Abort');
-const ide = globalThis.requestIdleCallback || setTimeout;
-console.log(ide.name);
-
 const now = () => {
   const timer = globalThis.performance || globalThis.Date;
   return timer.now();
 };
 
 const BreakErr = '_ERR_BREAK_';
-let remainAbortStack: Line[] = null;
-let remainRoot: Signal = null;
-const ideScheduler = new IdeScheduler();
-export const $abort = () => {
-  const s = new Signal(abortSymbol);
-  s.abort = undefined;
-  function disableDeep() {
-    disableDeep.disabled = true;
-    ideScheduler.pushTask(handleOneTask.bind(undefined, s, []));
-  }
-  disableDeep.ins = s;
-  disableDeep.disabled = false;
-
-  return disableDeep;
+let remain = {
+  stack: null as Line[],
+  node: null as Signal,
+  line: null as Line
 };
 
+const ideScheduler = new IdeScheduler();
+
+function runWithPulling(fn: Function, signal: Signal | undefined) {
+  const prevPulling = Signal.Pulling;
+  Signal.Pulling = signal;
+  fn();
+  Signal.Pulling = prevPulling;
+}
+
 function handleOneTask(s: Signal, breakStack: Line[]) {
-  s = remainRoot || s;
-  breakStack = remainAbortStack || breakStack;
+  breakStack = remain.stack || breakStack;
   // 将 s 同步到 remainRoot
-  remainRoot = s;
+  let lineToRemove: Line = null;
   const startTime = now();
   try {
     dfs(s, {
       breakStack,
-      isUp: false,
-      begin: ({ walkedLine }) => {
+      breakNode: remain.node,
+      breakLine: remain.line,
+      isUp: true,
+      begin: ({ walkedLine, node, lineFromUp }) => {
+        if (lineToRemove) {
+          Line.unlink(lineToRemove);
+          lineToRemove = null;
+        }
+
         if (now() - startTime > 5) {
-          remainAbortStack = walkedLine;
+          remain = {
+            stack: walkedLine,
+            node: node,
+            line: lineFromUp
+          };
           throw BreakErr;
         }
+
+        if (!(node.state & State.OutLink)) {
+          return true;
+        }
       },
-      complete: ({ lineToDeep }) => {
-        lineToDeep && Line.unlink(lineToDeep);
+      complete: ({ node, notGoDeep, walkedLine }) => {
+        if (lineToRemove) {
+          Line.unlink(lineToRemove);
+          lineToRemove = null;
+        }
+        if (notGoDeep) {
+          const last = walkedLine[walkedLine.length - 1];
+          const downstream = last?.downstream as Signal;
+          // 节点没被标记 OutLink 但是发现与下游节点的 scope 不一致，是需要解除 link 的位置
+          if (downstream && downstream.scope !== node.scope) {
+            lineToRemove = last;
+          }
+        }
       }
     });
-    remainAbortStack = null;
-    remainRoot = null;
+    remain = {
+      stack: null,
+      node: null,
+      line: null
+    };
   } catch (error) {
-    if (error === BreakErr) return;
-    remainAbortStack = null;
-    remainRoot = null;
+    if (error === BreakErr) return true;
+    remain = {
+      stack: null,
+      node: null,
+      line: null
+    };
     throw error;
   }
 }
 
-type AbortSignal = ReturnType<typeof $abort>;
-
-/** 全局 signal 的默认 abort */
-export const abort: AbortSignal = $abort();
-let currentAbort = abort;
 export const scope = (fn: () => void) => {
-  const prevAbort = currentAbort;
-  fn();
-  currentAbort = prevAbort;
+  const s = Signal.create(undefined, { customPull: fn, isScope: true });
+  s.get();
+  s.state |= State.ScopeReady;
+  function dispose() {
+    s.state |= State.ScopeAbort;
+    ideScheduler.pushTask(handleOneTask.bind(undefined, s, []));
+  }
+  dispose.ins = s;
+  return dispose;
 };
 
 const DefaultCustomSignalOpt = {
   scheduler: Scheduler.Sync,
-  abort
+  isScope: false
 };
 export type CustomSignalOpt = typeof DefaultCustomSignalOpt;
 
@@ -646,7 +741,7 @@ export const $: CreateSignal = (init?: unknown, opt: Partial<CustomSignalOpt> = 
   } else {
     intiValue = init;
   }
-  const signalOpt = { ...DefaultCustomSignalOpt, abort: currentAbort, ...opt, customPull: pull };
+  const signalOpt = { ...DefaultCustomSignalOpt, ...opt, customPull: pull };
   const s = Signal.create(intiValue, signalOpt);
   const bound = s.run.bind(s);
   bound.ins = s;
@@ -669,7 +764,7 @@ export const watch = (values: Getter[], watcher: Function, opt?: Partial<CustomS
       get();
     }
     if (mounted) {
-      watcher();
+      runWithPulling(watcher, undefined);
     }
     mounted = true;
   }, opt);
@@ -677,45 +772,18 @@ export const watch = (values: Getter[], watcher: Function, opt?: Partial<CustomS
   return get;
 };
 
-// const my = $abort();
+// const B = $(1);
+// let a, c, d, b;
+// const s = scope(() => {
+//   a = $(true);
+//   b = $(() => B.v);
+//   c = $(2);
 
-// const s0 = $(0, { abort: my });
+//   d = $(() => {
+//     return a.v ? b.v : c.v;
+//   });
 
-// const s1 = watch([s0], () => {
-//   console.log('变化');
-// });
-// s0.v = 1;
-
-// my();
-// setTimeout(() => {
-//   s0.v = 2;
-//   console.log(s1);
-// }, 1000);
-
-// const s0 = $(0);
-// s0.v;
-// const s1 = $(1);
-// const s2 = $(2);
-
-// const s3 = $(() => {
-//   if (!s0.v) {
-//     return s1.v;
-//   }
-//   return s2.v;
+//   d();
 // });
 
-// const s4 = $(() => {
-//   return s0.v + 4;
-// });
-
-// const s5 = $(() => {
-//   return s3.v + s4.v;
-// });
-
-// const s6 = $(() => {
-//   return s5.v;
-// });
-
-// s6.v;
-// s0.v = 1;
-// console.log(s6.v);
+// a.v = false;

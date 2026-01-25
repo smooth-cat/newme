@@ -26,8 +26,7 @@ export class DepStr {
         handled.push(`${name} <- ${nextName}`);
       });
     });
-    handled = Array.from(new Set(handled))
-    
+    handled = Array.from(new Set(handled));
 
     const state = [];
     const reflect = new Map();
@@ -40,14 +39,13 @@ export class DepStr {
       const currName = reflect.get(curr);
       let line = curr.emitStart;
       while (line != null) {
+        // if (line.downstream && line.downstream === line.downstream['scope']) continue;
         const downName = reflect.get(line.downstream);
         state.push(`${currName} -> ${downName}`);
         line = line.nextEmitLine;
       }
       line = curr.recStart;
       while (line != null) {
-        const {upstream} = line
-        if(!upstream['abort']) return;
         const upName = reflect.get(line.upstream);
         state.push(`${upName} <- ${currName}`);
         line = line.nextRecLine;
@@ -55,6 +53,6 @@ export class DepStr {
     }
     handled.sort();
     state.sort();
-    expect(handled).toEqual(state)
+    expect(state).toEqual(handled);
   }
 }
