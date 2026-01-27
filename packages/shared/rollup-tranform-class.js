@@ -12,7 +12,7 @@ export default function ({ types: t }) {
       Program: {
         enter: (path, state) => {
           const fullCode = path.hub.file.code;
-          console.log('代码', fullCode);
+          // console.log('代码', fullCode);
           state.staticFns = [];
         },
         exit: (path, state) => {

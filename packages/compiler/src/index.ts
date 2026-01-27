@@ -612,7 +612,7 @@ type UpdateItem = {
 let ast: any;
 const updateList: UpdateItem[] = [];
 const cmp = new Compiler();
-export function newme(fragments: TemplateStringsArray, ...values: any[]) {
+export function bobe(fragments: TemplateStringsArray, ...values: any[]) {
   // 增量更新
   if (ast) {
     updateList.forEach(({ old, fn }, i) => {
@@ -649,7 +649,7 @@ export function newme(fragments: TemplateStringsArray, ...values: any[]) {
   return ast;
 }
 
-// newme`
+// bobe`
 // node1 k1=1
 //   node1_1 k2=false k3=3
 //     node1_1_1 k6=null

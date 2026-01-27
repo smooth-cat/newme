@@ -1,14 +1,18 @@
-import { $, watch, Scheduler, scope } from '../index';
+import { $, watch, scope } from '../index';
+import { Scheduler } from '../schedule';
 import { Log } from '../../../shared/__test__/log-order';
 import { DepStr } from './dep-str';
-import { ide } from '../scope';
+import { ide } from '../util';
+import { evt, G } from '../global';
 beforeEach(() => {
   jest.useFakeTimers();
 });
 
 afterEach(() => {
   jest.useRealTimers();
-})
+  evt.clear();
+  G.scopeDisposeI = 0;
+});
 
 describe('watch 功能测试', () => {
   it('基本 watch 功能 - 监听单一信号变化', () => {
@@ -200,7 +204,7 @@ describe('watch 功能测试', () => {
 
     // 在取消监听后改变信号，不应该再触发 watch
     signal(3);
-    log.toBe(); 
+    log.toBe();
     // 通过 scope 嫩自动找出外部依赖并断开
     ide(() => {
       str.dep(`watcher -> dispose`);

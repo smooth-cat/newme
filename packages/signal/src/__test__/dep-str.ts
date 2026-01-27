@@ -1,4 +1,4 @@
-import { Signal } from 'src';
+import { Signal } from '../signal';
 
 it('dep-str协助测试', () => {
   expect('a').toBe('a');

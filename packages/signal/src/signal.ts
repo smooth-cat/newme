@@ -1,0 +1,266 @@
+import { dfs } from './dfs';
+import { dirtyLeafs, DirtyState, G, ScopeExecuted, State } from './global';
+import { Line } from './line';
+import { _scheduler } from './schedule';
+import { markOutLink, unlinkRecWithScope, unTrackIsland } from './scope';
+import { SignalOpt, Vertex } from './type';
+
+
+
+const markDeep = (signal: Signal) => {
+  let level = 0;
+  dfs(signal, {
+    isUp: false,
+    begin: ({ node }) => {
+      /**
+       * 1. 当前节点在预检  应该跳过
+       * 2. 当前节点       已标记
+       * 3. 当前节点       已放弃
+       */
+      // console.log('markBegin', node.id);
+
+      if (node.state & (State.Check | State.Unknown | State.Dirty) || node.isAbort()) {
+        return true;
+      }
+
+      const isEffect = level > 0;
+      const isLeaf = !node.emitStart || node.emitStart.downstream['scope'] === node.emitStart.downstream;
+      if (isEffect) {
+        node.state |= State.Unknown;
+      } else {
+        node.state |= State.Dirty;
+      }
+
+      if (isLeaf && isEffect) {
+        dirtyLeafs.add(node.scheduler, node);
+      }
+      level++;
+    }
+  });
+  for (const key in dirtyLeafs.data) {
+    const effects = dirtyLeafs.data[key];
+    const scheduler = _scheduler[key];
+    scheduler(effects);
+  }
+  dirtyLeafs.clear();
+};
+
+
+export class Signal<T = any> implements Vertex {
+  version = -1;
+  id = G.id++;
+  state = State.Clean;
+  /** 当前节点创建时处于的 effect 就是 scope */
+  scope: Signal = Signal.Pulling;
+  recEnd: Line = null;
+  recStart: Line = null;
+  emitStart: Line = null;
+  emitEnd: Line = null;
+  scheduler: string = null;
+  value: T = null;
+  static Pulling: Signal = null;
+  pull: () => T = null;
+
+  constructor(
+    private nextValue: T,
+    /** 为什么是 shallow，因为 pullDeep 会把
+     * 上游节点 get 执行完成，让其可以直接拿到缓存值
+     */
+    private customPull?: () => T
+  ) {}
+
+  static create<T>(nextValue: T, { customPull, isScope, ...rest }: SignalOpt<T>) {
+    const s = new Signal(nextValue, customPull);
+    s.pull = s.customPull || s.DEFAULT_PULL;
+    Object.assign(s, rest);
+    if (isScope) {
+      s.scope = s;
+    }
+    return s;
+  }
+
+  DEFAULT_PULL() {
+    return this.nextValue;
+  }
+
+  /**
+   * 递归拉取负责建立以来链
+   */
+  pullRecurse(shouldLink = true) {
+    let downstream = Signal.Pulling;
+
+    if (shouldLink && downstream) {
+      // 如果上游节点被 scope 管理了，解除管理
+      unTrackIsland(this);
+      Line.link(this, downstream);
+    }
+    try {
+      if (this.version === G.version) {
+        return this.value;
+      }
+      this.state &= ~State.OutLink;
+
+      // 进 pullShallow 前重置 recEnd，让子 getter 重构订阅链表
+      this.recEnd = undefined;
+
+      Signal.Pulling = this;
+
+      const v = this.pull();
+      // 如果使用了 DEFAULT_PULL，处理一次 set 的取值后，替换回 customPull，如果有的话
+      this.pull = this.customPull || this.DEFAULT_PULL;
+      this.value = v;
+      // 依赖上游的 版本号
+      this.version = G.version;
+      // if (this.value !== v) {
+      // }
+      return this.value;
+    } catch (error) {
+      console.error('计算属性报错这次不触发，后续状态可能出错', error);
+      return this.value;
+    } finally {
+      // 本 getter 执行完成时上游 getter 通过 link，完成对下游 recLines 的更新
+      const toDel = this.recEnd?.nextRecLine;
+      unlinkRecWithScope(toDel);
+      if (shouldLink && downstream) {
+        // 用于 scope 指示哪些节点依赖 scope 外部
+        markOutLink(this, downstream);
+      }
+      Signal.Pulling = downstream;
+    }
+  }
+
+  pullDeep() {
+    /*----------------- 有上游节点，通过 dfs 重新计算结果 -----------------*/
+    const signal = this;
+    // 优化执行
+    if (!(signal.state & DirtyState)) {
+      return this.value;
+    }
+    dfs(signal, {
+      isUp: true,
+      begin: ({ node }) => {
+        // console.log('begin', node.id);
+
+        /**
+         * 不需要检查
+         * 1. 正在查
+         * 2. 干净
+         * 3. 放弃 或者为 scope 节点
+         */
+        if (node.state & State.Check || !(node.state & DirtyState) || node.isAbort()) {
+          return true;
+        }
+        node.state |= State.Check;
+        // 交给下游重新计算是否 引用外部节点
+        node.state &= ~State.OutLink;
+      },
+      complete: ({ node, notGoDeep: currentClean, walkedLine }) => {
+        let noGoSibling = false;
+        const last = walkedLine[walkedLine.length - 1];
+        const downstream = last?.downstream as Signal;
+        // 当前正在检查，生成检查屏障，同时避免重新标记 和
+        if (currentClean) {
+        }
+        // 当前节点需要重新计算
+        else if (node.state & State.Dirty) {
+          // 优化：源节点变化，直接让下游节点重新计算
+          if (!node.recStart && node.value !== node.nextValue) {
+            node.markDownStreamsDirty();
+            node.state &= ~State.Dirty;
+            node.state &= ~State.Check;
+            return;
+          }
+          // 预检数据
+          else {
+            const prevPulling = Signal.Pulling;
+            Signal.Pulling = downstream;
+            const prevValue = node.value;
+            // 递归转用递归拉取，且不需要重建 link 因为dfs的前提就是上游节点依赖于 本节点
+            node.pullRecurse(false);
+            // dirty 传播， 由于本节点值已被计算出，因此消除 dirty
+            if (prevValue !== node.value) {
+              node.markDownStreamsDirty();
+            }
+            node.state &= ~State.Dirty;
+            Signal.Pulling = prevPulling;
+            // 立刻返回父节点重新计算
+            noGoSibling = true;
+          }
+        }
+        // 没被上游节点标记为 Dirty，说明是干净的
+        else if (node.state & State.Unknown) {
+          node.state &= ~State.Unknown;
+        }
+        node.version = G.version;
+        node.state &= ~State.Check;
+        if (downstream) {
+          markOutLink(node, downstream);
+        }
+        return noGoSibling;
+      }
+    });
+    return this.value;
+  }
+
+  get() {
+    if (this.isAbort()) {
+      return this.value;
+    }
+    // 没有上游节点，应该通过递归重新建立
+    if (!this.recStart) {
+      return this.pullRecurse(true);
+    }
+    // 有上游节点则采用 dfs 直接遍历，查看情况
+    return this.pullDeep();
+  }
+
+  markDownStreamsDirty() {
+    let point = this.emitStart;
+    while (point != null) {
+      const downstream = point.downstream as Signal;
+      downstream.state |= State.Dirty;
+      downstream.state &= ~State.Unknown;
+      point = point.nextEmitLine;
+    }
+  }
+
+  set(v: T) {
+    if (this.isAbort() || this.nextValue === v) {
+      return;
+    }
+    this.nextValue = v;
+    // 手动设值后，采用默认拉取，能拉取到设置的值，拉取完成后在替换回 customPull
+    this.pull = this.DEFAULT_PULL;
+    G.version++;
+    markDeep(this as any);
+  }
+
+  run(...args: any[]) {
+    if (args.length) {
+      return this.set(args[0]) as any;
+    }
+    return this.get();
+  }
+
+  runIfDirty() {
+    this.state & (State.Unknown | State.Dirty) && this.run();
+  }
+
+  isAbort() {
+    return (
+      // scope 被取消
+      (this.scope && this.scope.state & State.ScopeAbort) ||
+      // 是 scope 节点，且处于 ready 状态，不需要重复执行
+      (this === this.scope && this.state & ScopeExecuted)
+    );
+  }
+}
+
+
+export function runWithPulling(fn: Function, signal: Signal | undefined) {
+  const prevPulling = Signal.Pulling;
+  Signal.Pulling = signal;
+  fn();
+  Signal.Pulling = prevPulling;
+}
+

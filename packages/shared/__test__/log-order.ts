@@ -1,8 +1,9 @@
+type StrNum = string | number;
 export class Log {
-  order: string[] = [];
+  order: StrNum[] = [];
 
-  fnMap = new Map<string, Function>();
-  fn(name: string) {
+  fnMap = new Map<StrNum, Function>();
+  fn(name: StrNum) {
     if (this.fnMap.has(name)) {
       return this.fnMap.get(name);
     }
@@ -13,13 +14,13 @@ export class Log {
     return fn;
   }
 
-  call(name: string) {
+  call(name: StrNum) {
     this.fn(name)?.();
   }
 
-  toBe(...args: string[]) {
+  toBe(...args: StrNum[]) {
     expect(this.order).toEqual(args);
-    this.order = []
+    this.order = [];
   }
 
   clear() {

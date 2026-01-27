@@ -50,7 +50,7 @@ export default [
       babel({
         babelHelpers: 'bundled',
         extensions: ['.ts'],
-        plugins: [resolveFile('../shared/rollup-tranform-class.js')] // 使用我们刚才写的插件
+        // plugins: [resolveFile('../shared/rollup-tranform-class.js')] // 使用我们刚才写的插件
       })
     ]
   }

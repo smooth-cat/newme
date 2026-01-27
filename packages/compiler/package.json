@@ -1,9 +1,9 @@
 {
-  "name": "newme",
+  "name": "bobe",
   "version": "0.0.3",
-  "main": "dist/newme.cjs.js",
-  "module": "dist/newme.esm.js",
-  "browser": "dist/newme.umd.js",
+  "main": "dist/bobe.cjs.js",
+  "module": "dist/bobe.esm.js",
+  "browser": "dist/bobe.umd.js",
   "types": "dist/index.d.ts",
   "devDependencies": {},
   "scripts": {
@@ -19,7 +19,7 @@
   ],
   "license": "MIT",
   "keywords": [
-    "newme",
+    "bobe",
     "new-me",
     "smooth",
     "cat"
@@ -27,11 +27,11 @@
   "author": "smooth-cat",
   "repository": {
     "type": "git",
-    "url": "git+git@github.com:smooth-cat/newme.git"
+    "url": "git+git@github.com:smooth-cat/bobe.git"
   },
   "bugs": {
-    "url": "https://github.com/smooth-cat/newme/issues"
+    "url": "https://github.com/smooth-cat/bobe/issues"
   },
-  "homepage": "https://github.com/smooth-cat/newme#readme",
-  "description": "a newme template runtime compiler"
+  "homepage": "https://github.com/smooth-cat/bobe#readme",
+  "description": "a bobe template runtime compiler"
 }

@@ -1,9 +1,9 @@
 {
-  "name": "newme-signal",
-  "version": "0.0.3",
-  "main": "dist/newme-signal.cjs.js",
-  "module": "dist/newme-signal.esm.js",
-  "browser": "dist/newme-signal.umd.js",
+  "name": "aoye",
+  "version": "0.0.2",
+  "main": "dist/aoye.cjs.js",
+  "module": "dist/aoye.esm.js",
+  "browser": "dist/aoye.umd.js",
   "types": "dist/index.d.ts",
   "devDependencies": {},
   "scripts": {
@@ -19,7 +19,7 @@
   ],
   "license": "MIT",
   "keywords": [
-    "newme-signal",
+    "aoye",
     "new-me",
     "smooth",
     "cat"
