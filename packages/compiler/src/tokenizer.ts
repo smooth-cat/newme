@@ -121,10 +121,8 @@ export class Tokenizer {
   }
 
   setCode(code: string) {
-    // 保证开头能通过 换行进行 indent 计算
-    this.code = '\n' + code.trimEnd() + '\n';
-    // 保证结尾 dedent 能正常配对
-    // this.code = code.trimEnd() + `\n${Tokenizer.EofId}`;
+    // 保证开头结尾能正确计算
+    this.code = '\n' + code.trimEnd() + `\n${Tokenizer.EofId}`;
   }
 
   tokenize() {
@@ -137,8 +135,8 @@ export class Tokenizer {
   isEof() {
     // 刚开始时 token 不存在
     if (!this.token) return false;
-    // return this.token.type & TokenType.Identifier && this.token.value === Tokenizer.EofId;
-    return this.char === undefined;
+    return this.token.type & TokenType.Identifier && this.token.value === Tokenizer.EofId;
+    // return this.char === undefined;
   }
 
   get char() {

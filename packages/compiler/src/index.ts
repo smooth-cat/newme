@@ -1,6 +1,5 @@
-import { isNum, Queue } from '../../shared/util';
 import { Tokenizer } from './tokenizer';
-import { Hook, HookProps, LogicType, Token, TokenType } from './type';
+import { Hook, HookProps, LogicType, StackItem, TokenType } from './type';
 
 export class Interpreter {
   /** 模板字符串动态节点的占位符 */
@@ -21,6 +20,60 @@ export class Interpreter {
     const _program = this.createRoot();
     this.nodeList(_program);
     return _program;
+  }
+
+  stack: StackItem[] = [];
+
+  experimentalProgram() {
+    this.tokenizer.consume();
+    let current: any;
+    let prevSibling: any;
+    const rootList: any[] = [];
+    while (1) {
+      if (this.tokenizer.isEof()) {
+        rootList.push(current);
+        break;
+      }
+
+      const token = this.tokenizer.token;
+      // 下沉，创建 child0
+      if (token.type & TokenType.Indent) {
+        const INDENT = this.tokenizer.consume();
+        this.stack.push({
+          prevSibling,
+          node: current
+        });
+        // 第 0 个节点没有前置节点
+        prevSibling = null;
+        current = this.declaration();
+      }
+      // 下一个可能是 同级节点 或 Dedent
+      else {
+        // 将当前节点插入父节点
+        if (current) {
+          if (this.stack.length) {
+            const parent = this.stack[this.stack.length - 1].node;
+            this.insert(parent, current, prevSibling);
+          } else {
+            rootList.push(current);
+          }
+        }
+
+        // 下一个 token 是 Dedent
+        if (this.tokenizer.token.type & TokenType.Dedent) {
+          const DEDENT = this.tokenizer.consume();
+          const { node: parent, prevSibling: prevParent } = this.stack.pop();
+          prevSibling = prevParent;
+          current = parent;
+        }
+        // 下一个是 同级节点
+        else {
+          prevSibling = current;
+          current = this.declaration();
+        }
+      }
+    }
+    return rootList;
   }
 
   /**
@@ -160,7 +213,7 @@ export class Interpreter {
         console.log('skip');
         console.log(ifNode.skip);
       }
-    })
+    });
     return ifNode;
   }
 
@@ -272,7 +325,15 @@ export class Interpreter {
     opt: Partial<
       Pick<
         Interpreter,
-        'createRoot' | 'createNode' | 'setProp' | 'setDataProp' | 'setChildren' | 'hook' | 'HookId' | 'effect'
+        | 'createRoot'
+        | 'createNode'
+        | 'setProp'
+        | 'setDataProp'
+        | 'setChildren'
+        | 'hook'
+        | 'HookId'
+        | 'effect'
+        | 'insert'
       >
     >
   ) {
@@ -300,7 +361,7 @@ export class Interpreter {
     return this.createNode('root');
   }
 
-  insert(parent: any, node: any, prevSibling: any, prevItem: any) {
+  insert(parent: any, node: any, prevSibling: any, prevItem?: any) {
     return this.defaultInsert(parent, node, prevSibling, prevItem);
   }
   defaultInsert(parent: any, node: any, prevSibling: any, prevItem: any) {
@@ -385,3 +446,40 @@ export class Interpreter {
     return [isHook, value];
   };
 }
+
+// const tokenizer = new Tokenizer();
+// const cmp = new Interpreter(tokenizer);
+
+// // 初始化
+// cmp.config({
+//   insert(parent, node) {
+//     if (parent.children) {
+//       parent.children.push(node);
+//     } else {
+//       parent.children = [node];
+//     }
+//     return undefined;
+//   },
+//   setDataProp(data, key, value) {
+//     return (data[key] = value);
+//   },
+//   setProp(node: any, key: string, value: any, hookI?: number) {
+//     node.props[key] = value;
+//   }
+// });
+// cmp.init(`
+// node1 k1=1
+//   node1_1 k2=2 k3=3
+//     node1_1_1 k6=6
+// node2
+// | p1=1
+// | p2=2 p3=3
+//   node2_1
+//   | p4=4 p5=5 p6=6
+//   node2_2
+//   | p7=7
+// node3 v1=1  v2=2 v3=3
+//   node3_1 v4=4 v5=5 v6=6
+// `);
+// const res = cmp.experimentalProgram();
+// console.log(JSON.stringify(res, undefined, 2));

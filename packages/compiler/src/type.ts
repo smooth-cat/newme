@@ -33,3 +33,11 @@ export type HookProps = {
   parentNode?: any;
 };
 export type Hook = (props: HookProps) => any;
+
+
+export type StackItem = {
+  /** 表示当前节点子节点已处理完毕 */
+  prevSibling: any;
+  /** 当前节点*/
+  node: any;
+}
