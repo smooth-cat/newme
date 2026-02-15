@@ -2,10 +2,8 @@ import { dfs } from './dfs';
 import { dirtyLeafs, DirtyState, G, ScopeExecuted, State } from './global';
 import { Line } from './line';
 import { _scheduler } from './schedule';
-import { markOutLink, unlinkRecWithScope, unTrackIsland } from './scope';
+import { unlinkRecWithScope } from './scope';
 import { SignalOpt, Vertex } from './type';
-
-
 
 const markDeep = (signal: Signal) => {
   let level = 0;
@@ -19,15 +17,18 @@ const markDeep = (signal: Signal) => {
        */
       // console.log('markBegin', node.id);
 
-      if (node.state & (State.Check | State.Unknown | State.Dirty) || node.isAbort()) {
+      if (node.state & (State.Check | State.Unknown | State.Dirty) || node.isDisabled()) {
         return true;
       }
 
       const isEffect = level > 0;
-      const isLeaf = !node.emitStart || node.emitStart.downstream['scope'] === node.emitStart.downstream;
+      // 没有下游，或者下游是 scope
+      const isLeaf = !node.emitStart || node.emitStart.downstream === node.scope;
       if (isEffect) {
         node.state |= State.Unknown;
-      } else {
+      } 
+      // 源节点是叶子节点，不做标记，后续可以通过 get 重新拉取到新值
+      else if(!isLeaf) {
         node.state |= State.Dirty;
       }
 
@@ -45,7 +46,6 @@ const markDeep = (signal: Signal) => {
   dirtyLeafs.clear();
 };
 
-
 export class Signal<T = any> implements Vertex {
   version = -1;
   id = G.id++;
@@ -58,6 +58,7 @@ export class Signal<T = any> implements Vertex {
   emitEnd: Line = null;
   scheduler: string = null;
   value: T = null;
+  outLink: Line = null;
   static Pulling: Signal = null;
   pull: () => T = null;
 
@@ -74,7 +75,7 @@ export class Signal<T = any> implements Vertex {
     s.pull = s.customPull || s.DEFAULT_PULL;
     Object.assign(s, rest);
     if (isScope) {
-      s.scope = s;
+      s.state |= State.IsScope;
     }
     return s;
   }
@@ -91,7 +92,7 @@ export class Signal<T = any> implements Vertex {
 
     if (shouldLink && downstream) {
       // 如果上游节点被 scope 管理了，解除管理
-      unTrackIsland(this);
+      // unTrackIsland(this);
       Line.link(this, downstream);
     }
     try {
@@ -101,7 +102,7 @@ export class Signal<T = any> implements Vertex {
       this.state &= ~State.OutLink;
 
       // 进 pullShallow 前重置 recEnd，让子 getter 重构订阅链表
-      this.recEnd = undefined;
+      this.recEnd = null;
 
       Signal.Pulling = this;
 
@@ -121,10 +122,6 @@ export class Signal<T = any> implements Vertex {
       // 本 getter 执行完成时上游 getter 通过 link，完成对下游 recLines 的更新
       const toDel = this.recEnd?.nextRecLine;
       unlinkRecWithScope(toDel);
-      if (shouldLink && downstream) {
-        // 用于 scope 指示哪些节点依赖 scope 外部
-        markOutLink(this, downstream);
-      }
       Signal.Pulling = downstream;
     }
   }
@@ -147,7 +144,7 @@ export class Signal<T = any> implements Vertex {
          * 2. 干净
          * 3. 放弃 或者为 scope 节点
          */
-        if (node.state & State.Check || !(node.state & DirtyState) || node.isAbort()) {
+        if (node.state & State.Check || !(node.state & DirtyState) || node.isDisabled()) {
           return true;
         }
         node.state |= State.Check;
@@ -193,9 +190,6 @@ export class Signal<T = any> implements Vertex {
         }
         node.version = G.version;
         node.state &= ~State.Check;
-        if (downstream) {
-          markOutLink(node, downstream);
-        }
         return noGoSibling;
       }
     });
@@ -203,7 +197,7 @@ export class Signal<T = any> implements Vertex {
   }
 
   get() {
-    if (this.isAbort()) {
+    if (this.isDisabled()) {
       return this.value;
     }
     // 没有上游节点，应该通过递归重新建立
@@ -213,6 +207,14 @@ export class Signal<T = any> implements Vertex {
     // 有上游节点则采用 dfs 直接遍历，查看情况
     return this.pullDeep();
   }
+
+  // pause() {
+  //   this.state |= State.SelfPaused;
+  // }
+
+  // resume() {
+  //   this.state &= ~State.SelfPaused;
+  // }
 
   markDownStreamsDirty() {
     let point = this.emitStart;
@@ -225,7 +227,7 @@ export class Signal<T = any> implements Vertex {
   }
 
   set(v: T) {
-    if (this.isAbort() || this.nextValue === v) {
+    if (this.isDisabled() || this.nextValue === v) {
       return;
     }
     this.nextValue = v;
@@ -246,21 +248,19 @@ export class Signal<T = any> implements Vertex {
     this.state & (State.Unknown | State.Dirty) && this.run();
   }
 
-  isAbort() {
+  isDisabled() {
     return (
       // scope 被取消
       (this.scope && this.scope.state & State.ScopeAbort) ||
       // 是 scope 节点，且处于 ready 状态，不需要重复执行
-      (this === this.scope && this.state & ScopeExecuted)
+      (this.state & State.IsScope && this.state & ScopeExecuted)
     );
   }
 }
 
-
-export function runWithPulling(fn: Function, signal: Signal | undefined) {
+export function runWithPulling(fn: Function, signal: Signal | null) {
   const prevPulling = Signal.Pulling;
   Signal.Pulling = signal;
   fn();
   Signal.Pulling = prevPulling;
 }
-

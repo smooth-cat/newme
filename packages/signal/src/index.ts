@@ -1,8 +1,8 @@
 import { evt, G, State } from './global';
 import { Scheduler } from './schedule';
-import { handleOneTask, ideScheduler } from './scope';
+import { dispose } from './scope';
 import { runWithPulling, Signal } from './signal';
-import { Getter, Mix } from './type';
+import { Getter, Mix, ValueDiff } from './type';
 
 export { Scheduler, scheduler } from './schedule';
 export { TaskQueue } from './task';
@@ -19,16 +19,19 @@ export type CreateSignal = {
   <T = any>(value: T, opt?: CustomSignalOpt): Mix<T>;
 };
 
-export const $: CreateSignal = (init?: unknown, opt: CustomSignalOpt = {}) => {
-  let intiValue: any, pull: Getter;
+export const $: CreateSignal = (init?: unknown) => {
+  let intiValue: any, customPull: Getter;
   if (init instanceof Function) {
-    intiValue = undefined;
-    pull = init as Getter;
+    intiValue = null;
+    customPull = init as Getter;
   } else {
     intiValue = init;
   }
-  const signalOpt = { ...DefaultCustomSignalOpt, ...opt, customPull: pull };
-  const s = Signal.create(intiValue, signalOpt);
+  const s = Signal.create(intiValue, {
+    scheduler: Scheduler.Sync,
+    isScope: false,
+    customPull
+  });
   const bound = s.run.bind(s);
   bound.ins = s;
   Object.defineProperty(bound, 'v', {
@@ -42,33 +45,60 @@ export const $: CreateSignal = (init?: unknown, opt: CustomSignalOpt = {}) => {
   return bound as any;
 };
 
-export const watch = (values: Getter[], watcher: Function, opt?: CustomSignalOpt) => {
+export const watch = (values: Getter[], watcher: (...args: ValueDiff[]) => void, opt: CustomSignalOpt = {}) => {
   let mounted = false;
-  const get = $(() => {
-    for (const get of values) {
-      get();
-    }
-    if (mounted) {
-      runWithPulling(watcher, undefined);
-    }
-    mounted = true;
-  }, opt);
-  get();
-  return get;
+  const vs: ValueDiff[] = Array.from({ length: values.length }, () => ({ old: null, val: null }));
+  const s = Signal.create(null, {
+    customPull() {
+      for (let i = 0; i < values.length; i++) {
+        const value = values[i]();
+        vs[i].old = vs[i].val;
+        vs[i].val = value;
+      }
+
+      if (mounted) {
+        runWithPulling(() => watcher(...vs), null);
+      }
+      mounted = true;
+    },
+    scheduler: Scheduler.Sync,
+    isScope: true,
+    ...opt
+  });
+
+  s.get();
+  const bound = dispose.bind(s);
+  bound.ins = s;
+  return bound;
 };
 
-export const scope = (fn: () => void) => {
-  const s = Signal.create(undefined, { customPull: fn, isScope: true });
+export const effect = (customPull: () => void, opt: CustomSignalOpt = {}) => {
+  const s = Signal.create(null, {
+    customPull,
+    scheduler: Scheduler.Sync,
+    isScope: true,
+    ...opt
+  });
+
+  s.get();
+  const bound = dispose.bind(s);
+  bound.ins = s;
+  return bound;
+};
+
+export const scope = (customPull: () => void) => {
+  const s = Signal.create(null, {
+    customPull,
+    scheduler: Scheduler.Sync,
+    isScope: true
+  });
+
   s.get();
   s.state |= State.ScopeReady;
-  function dispose() {
-    s.state |= State.ScopeAbort;
-    const bound = handleOneTask.bind(undefined, s, []);
-    bound.index = G.scopeDisposeI++;
-    ideScheduler.pushTask(bound);
-  }
-  dispose.ins = s;
-  return dispose;
+
+  const bound = dispose.bind(s);
+  bound.ins = s;
+  return bound;
 };
 
 /**
@@ -77,11 +107,21 @@ export const scope = (fn: () => void) => {
  * @prop scheduler: (runIfDirty, effect) => void 执行 runIfDirty 定制触发 effect 时机
  * @prop scope: 用于统一释放 effect link 的作用域 默认是 defaultScope 可以全局获取
  */
-export const customSignal = (opt?: CustomSignalOpt) => {
+export const customEffect = (opt?: CustomSignalOpt) => {
   return ((init: any, innerOpt: any = {}) => {
-    const s = $(init, { ...opt, ...innerOpt });
-    return s;
-  }) as CreateSignal;
+    return effect(init, { ...opt, ...innerOpt });
+  }) as typeof effect;
+};
+/**
+ * 数据变化时，自定义 触发订阅函数的时机
+ * @param {CustomSignalOpt} opt 配置如下:
+ * @prop scheduler: (runIfDirty, effect) => void 执行 runIfDirty 定制触发 effect 时机
+ * @prop scope: 用于统一释放 effect link 的作用域 默认是 defaultScope 可以全局获取
+ */
+export const customWatch = (opt?: CustomSignalOpt) => {
+  return ((init: any, innerOpt: any = {}) => {
+    return watch(init, { ...opt, ...innerOpt });
+  }) as typeof watch;
 };
 // const globalSignal = $(10);
 

@@ -29,15 +29,15 @@ let macroSTaskQueue: TaskQueue<{ time: number }>;
 let layoutSTaskQueue: TaskQueue<{ time: number }>;
 function microScheduler(effects: Signal[]) {
   microSTaskQueue = microSTaskQueue || TaskQueue.create({ callbackAble: micro, aIsUrgent: (a, b) => a.time < b.time });
-  microSTaskQueue.pushTask(defaultScheduler.bind(undefined, effects));
+  microSTaskQueue.pushTask(defaultScheduler.bind(null, effects));
 }
 
 function macroScheduler(effects: Signal[]) {
   macroSTaskQueue = macroSTaskQueue || TaskQueue.create({ callbackAble: macro, aIsUrgent: (a, b) => a.time < b.time });
-  macroSTaskQueue.pushTask(defaultScheduler.bind(undefined, effects));
+  macroSTaskQueue.pushTask(defaultScheduler.bind(null, effects));
 }
 function layoutScheduler(effects: Signal[]) {
   layoutSTaskQueue =
     layoutSTaskQueue || TaskQueue.create({ callbackAble: macro, aIsUrgent: (a, b) => a.time < b.time });
-  layoutSTaskQueue.pushTask(defaultScheduler.bind(undefined, effects));
+  layoutSTaskQueue.pushTask(defaultScheduler.bind(null, effects));
 }

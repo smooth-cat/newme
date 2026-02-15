@@ -1,3 +1,4 @@
+import { State } from './global';
 import type { Signal } from './signal';
 import { Vertex } from './type';
 
@@ -37,18 +38,46 @@ export class Line {
     }
     // 消除 head
     for (const key in head) {
-      head[key] = undefined;
+      head[key] = null;
+    }
+    // v1 和 v2 处于不同 scope，v1 不是 scope
+    // => v1 是外部 signal
+    if (line && v2.scope && v1.scope !== v2.scope && !(v1.state & State.IsScope)) {
+      const first = v2.scope.outLink;
+      if (!first) {
+        v2.scope.outLink = line;
+      } else {
+        first.prevOutLink = line;
+        line.nextOutLink = first;
+        v2.scope.outLink = line;
+      }
     }
   }
 
   static unlink(line: Line) {
-    let { prevEmitLine, nextEmitLine, prevRecLine, nextRecLine, upstream, downstream } = line;
-    line.prevEmitLine = undefined;
-    line.nextEmitLine = undefined;
-    line.prevRecLine = undefined;
-    line.nextRecLine = undefined;
-    line.upstream = undefined;
-    line.downstream = undefined;
+    let { prevEmitLine, nextEmitLine, prevRecLine, nextRecLine, upstream, downstream, nextOutLink, prevOutLink } = line;
+    line.prevEmitLine = null;
+    line.nextEmitLine = null;
+    line.prevRecLine = null;
+    line.nextRecLine = null;
+    line.upstream = null;
+    line.downstream = null;
+    line.prevOutLink = null;
+    line.nextOutLink = null;
+
+    const downNode = downstream as Signal;
+    // 有兄弟外部引用
+    if(prevOutLink) {
+      prevOutLink.nextOutLink = nextOutLink;
+    } 
+    if(nextOutLink) {
+      nextOutLink.prevOutLink = prevOutLink;
+    }
+    // 是 first 节点
+    if(downNode.scope && downNode.scope.outLink === line) {
+      downNode.scope.outLink = nextOutLink;
+    }
+
 
     /** 上游节点发出的线 前一条 关联 后一条 */
     if (prevEmitLine) {
@@ -159,5 +188,8 @@ export class Line {
   public prevRecLine: Line = null;
   /** 下游节点 接收的下一条线 */
   public nextRecLine: Line = null;
+  /** 表示 scope 当前存在的 外部 link  */
+  public prevOutLink = null;
+  public nextOutLink = null;
   constructor() {}
 }

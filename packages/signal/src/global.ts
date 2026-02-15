@@ -9,22 +9,27 @@ export const G = {
   version: 0,
   id: 0,
   /** scope 销毁任务序号 */
-  scopeDisposeI: 0
+  scopeDisposeI: 0,
+  parentScope: null as Signal | null,
+  currentScope: null as Signal | null
 };
 
 export const dirtyLeafs = new SortMap<Signal>();
 
 export enum State {
-  Clean = 0b0000,
+  Clean = 0,
+  SelfStopped = 0b0000_0000_0000_0000_0000_0001_0000_0000,
+  IsScope = 0b0000_0000_0000_0000_0000_0000_1000_0000,
   /** 仅用于 scope 节点是否 abort */
-  ScopeAborted = 0b1000000,
-  ScopeAbort = 0b0100000,
-  OutLink = 0b0010000,
-  Unknown = 0b0001000,
-  Dirty = 0b0000100,
-  Check = 0b0000010,
-  ScopeReady = 0b0000001
+  ScopeAborted = 0b0000_0000_0000_0000_0000_0000_0100_0000,
+  ScopeAbort = 0b0000_0000_0000_0000_0000_0000_0010_0000,
+  OutLink = 0b0000_0000_0000_0000_0000_0000_0001_0000,
+  Unknown = 0b0000_0000_0000_0000_0000_0000_0000_1000,
+  Dirty = 0b0000_0000_0000_0000_0000_0000_0000_0100,
+  Check = 0b0000_0000_0000_0000_0000_0000_0000_0010,
+  ScopeReady = 0b0000_0000_0000_0000_0000_0000_0000_0001
 }
 
 export const DirtyState = State.Unknown | State.Dirty;
-export const ScopeExecuted = State.ScopeReady | State.ScopeAbort | State.ScopeAborted;
+export const ScopeExecuted =  State.ScopeReady | State.ScopeAbort | State.ScopeAborted;
+export const ScopeAbort = State.ScopeAbort | State.ScopeAborted;

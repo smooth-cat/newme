@@ -19,9 +19,14 @@ describe('watch 功能测试', () => {
     const log = new Log();
     const signal = $(1);
 
-    watch([() => signal()], () => {
+    const watcher = watch([() => signal()], () => {
       log.call('watcher执行');
     });
+
+    const dep = new DepStr({ signal, watcher });
+    dep.depIs(`
+      signal -> watcher
+    `);
 
     // 初始化阶段不应执行
     log.toBe();
@@ -115,7 +120,7 @@ describe('watch 功能测试', () => {
 
     // 验证依赖关系已建立
     const depStr = new DepStr({ signal1, signal2, computed, watcher });
-    depStr.dep(`
+    depStr.depIs(`
       signal1 -> computed -> watcher
       signal2 -> computed -> watcher
     `);
@@ -191,25 +196,108 @@ describe('watch 功能测试', () => {
       dispose
     });
 
+    str.depIs(`
+      signal -> watcher -> dispose   
+    `);
+
     // 改变信号值，触发 watch
     signal(2);
     log.toBe('watcher执行');
 
-    str.dep(`
-      signal -> watcher -> dispose   
-      `);
-
     // 调用 dispose 函数来取消监听
     dispose();
-
+    str.depIs(`watcher -> dispose`);
     // 在取消监听后改变信号，不应该再触发 watch
     signal(3);
     log.toBe();
     // 通过 scope 嫩自动找出外部依赖并断开
     ide(() => {
-      str.dep(`watcher -> dispose`);
+      str.depIs(`watcher -> dispose`);
       done();
     });
     jest.runAllTimers();
+  });
+
+  it('stop 功能测试', () => {
+    const log = new Log();
+    const signal = $(1);
+
+    const watcher = watch([() => signal()], () => {
+      log.call('watcher执行');
+    });
+
+    const dep = new DepStr({ signal, watcher });
+
+    // 初始状态应该正常工作
+    signal(2);
+    log.toBe('watcher执行');
+    dep.depIs(`
+      signal -> watcher
+      `);
+
+    // 停止监听
+    watcher();
+
+    dep.depIs(``);
+
+    // 改变信号值，不应该触发监听器
+    signal(3);
+    log.toBe(); // 没有新的执行
+
+    // 再次改变信号值，仍然不应该触发监听器
+    signal(4);
+    log.toBe(); // 没有新的执行
+  });
+
+  it('监听多个信号时的新旧值比较', () => {
+    const log = new Log();
+    const signal1 = $(1);
+    const signal2 = $(2);
+
+    watch([() => signal1(), () => signal2()], (...args) => {
+      const valueDiffs = args;
+      log.call(
+        `新值=${JSON.stringify(valueDiffs.map(v => v.val))}, 旧值=${JSON.stringify(valueDiffs.map(v => v.old))}`
+      );
+    });
+
+    // 初始化不应执行
+    log.toBe();
+
+    // 改变第一个信号
+    signal1(10);
+    log.toBe('新值=[10,2], 旧值=[1,2]');
+
+    // 改变第二个信号
+    signal2(20);
+    log.toBe('新值=[10,20], 旧值=[10,2]');
+
+    // 同时改变两个信号
+    signal1(100);
+    signal2(200);
+    log.toBe('新值=[100,20], 旧值=[10,20]', '新值=[100,200], 旧值=[100,20]');
+  });
+
+  it('stop 功能对微任务 watcher 的停止', done => {
+    const log = new Log();
+    const signal = $(1);
+
+    const watcher = watch(
+      [() => signal()],
+      () => {
+        log.call('micro task watcher执行');
+      },
+      { scheduler: Scheduler.Micro }
+    );
+
+    // 初始状态，改变信号会触发微任务执行
+    signal(2);
+    log.toBe(); // 微任务还未执行
+    watcher();
+
+    Promise.resolve().then(() => {
+      log.toBe(); // 因为停止了，所以没有执行
+      done();
+    });
   });
 });

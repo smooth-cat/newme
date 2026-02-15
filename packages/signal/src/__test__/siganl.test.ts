@@ -39,7 +39,7 @@ describe('signal 基础功能测试', () => {
     // 初始计算
     expect(c()).toBe(5); // 1 * 2 + 3
     log.toBe('c计算', 'b计算');
-    depStr.dep(`
+    depStr.depIs(`
       a -> b -> c
     `);
 
@@ -64,7 +64,7 @@ describe('signal 基础功能测试', () => {
     // 初始：条件为 true，依赖 value1
     expect(result()).toBe(10);
     log.toBe('result计算');
-    depStr.dep(`
+    depStr.depIs(`
       condition -> result
       value1 -> result
     `);
@@ -76,7 +76,7 @@ describe('signal 基础功能测试', () => {
 
     // 创建新的 DepStr 来检查新依赖
     const depStr2 = new DepStr({ condition, value1, value2, result });
-    depStr2.dep(`
+    depStr2.depIs(`
       condition -> result
       value2 -> result
     `);
@@ -114,7 +114,7 @@ describe('signal 基础功能测试', () => {
     // 初始状态：flag1=true, flag2=false，所以返回 b.v
     expect(result()).toBe(2);
     log.toBe('result计算');
-    depStr.dep(`
+    depStr.depIs(`
       flag1 -> result
       flag2 -> result
       b -> result
@@ -125,7 +125,7 @@ describe('signal 基础功能测试', () => {
     expect(result()).toBe(1);
     log.toBe('result计算');
     const depStr2 = new DepStr({ flag1, flag2, a, b, c, result });
-    depStr2.dep(`
+    depStr2.depIs(`
       flag1 -> result
       flag2 -> result
       a -> result
@@ -136,7 +136,7 @@ describe('signal 基础功能测试', () => {
     expect(result()).toBe(3);
     log.toBe('result计算');
     const depStr3 = new DepStr({ flag1, flag2, a, b, c, result });
-    depStr3.dep(`
+    depStr3.depIs(`
       flag1 -> result
       c -> result
     `);
@@ -193,7 +193,7 @@ describe('signal 基础功能测试', () => {
     // 初始计算 - 通过 pullRecurse 建立依赖链（先序遍历）
     expect(final()).toBe(34); // 1*2*3*4 + 10 = 34
     log.toBe('final计算', 'level3计算', 'level2计算', 'level1计算'); // 先序：final -> level3 -> level2 -> level1
-    depStr.dep(`
+    depStr.depIs(`
       root -> level1 -> level2 -> level3 -> final
     `);
 
@@ -224,7 +224,7 @@ describe('signal 基础功能测试', () => {
     // 初始计算
     expect(d()).toBe(6); // b=1*2=2, c=1+3=4, d=2+4=6
     log.toBe('d计算', 'b计算', 'c计算'); // pullRecurse 先序遍历：d -> b -> c
-    depStr.dep(`
+    depStr.depIs(`
       a -> b -> d
       a -> c -> d
     `);
@@ -272,7 +272,7 @@ describe('signal 基础功能测试', () => {
     // 初始计算 - pullRecurse 建立依赖
     expect(s6()).toBe(5); // s0=0, !s0.v=true, s3=s1.v=1, s4=0+4=4, s5=1+4=5, s6=5
     log.toBe('s6计算', 's5计算', 's3计算', 's4计算'); // 先序遍历
-    depStr.dep(`
+    depStr.depIs(`
       s0 -> s3 -> s5 -> s6
       s1 -> s3
       s0 -> s4 -> s5
@@ -301,7 +301,7 @@ describe('signal 基础功能测试', () => {
     // 初始计算
     expect(c()).toBe(5); // b=1*2=2, c=2+3=5
     log.toBe('c计算', 'b计算');
-    depStr.dep(`
+    depStr.depIs(`
       a -> b -> c
     `);
 
@@ -313,7 +313,7 @@ describe('signal 基础功能测试', () => {
     a(2);
     expect(c()).toBe(7);
     log.toBe('b计算', 'c计算');
-    depStr.dep(`
+    depStr.depIs(`
       a -> b -> c
     `);
   });

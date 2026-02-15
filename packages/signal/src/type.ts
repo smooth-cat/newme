@@ -46,4 +46,11 @@ export type Mix<T = any> = {
   (v: T): void;
   (): T;
   v: T;
+  stop(): void;
 };
+
+
+export type ValueDiff = {
+  old: any;
+  val: any;
+}

@@ -4,11 +4,11 @@ import { DFSCtxBegin, DFSCtxCompete, Vertex } from './type';
 
 const DefaultDFSOpt = {
   isUp: false,
-  begin: undefined as (dfsCtx: DFSCtxBegin) => any,
-  complete: undefined as (dfsCtx: DFSCtxCompete) => any,
+  begin: null as (dfsCtx: DFSCtxBegin) => any,
+  complete: null as (dfsCtx: DFSCtxCompete) => any,
   breakStack: [] as Line[],
-  breakLine: undefined as Line,
-  breakNode: undefined as Signal
+  breakLine: null as Line,
+  breakNode: null as Signal
 };
 
 type DFSOpt = typeof DefaultDFSOpt;

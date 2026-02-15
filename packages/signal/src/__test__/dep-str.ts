@@ -4,12 +4,18 @@ it('dep-str协助测试', () => {
   expect('a').toBe('a');
 });
 export class DepStr {
-  constructor(public signals: Record<string, any>) {}
+  reflect = new Map();
+  constructor(public signals: Record<string, any>) {
+    for (const key in this.signals) {
+      const curr = this.signals[key].ins as Signal;
+      this.reflect.set(curr, key);
+    }
+  }
 
   /**
    * a -> b -> c
    */
-  dep(str: string) {
+  depIs(str: string) {
     const lines = str.split('\n');
     let handled: string[] = [];
     lines.forEach(line => {
@@ -29,24 +35,20 @@ export class DepStr {
     handled = Array.from(new Set(handled));
 
     const state = [];
-    const reflect = new Map();
+
     for (const key in this.signals) {
       const curr = this.signals[key].ins as Signal;
-      reflect.set(curr, key);
-    }
-    for (const key in this.signals) {
-      const curr = this.signals[key].ins as Signal;
-      const currName = reflect.get(curr);
+      const currName = this.reflect.get(curr);
       let line = curr.emitStart;
       while (line != null) {
         // if (line.downstream && line.downstream === line.downstream['scope']) continue;
-        const downName = reflect.get(line.downstream);
+        const downName = this.reflect.get(line.downstream);
         state.push(`${currName} -> ${downName}`);
         line = line.nextEmitLine;
       }
       line = curr.recStart;
       while (line != null) {
-        const upName = reflect.get(line.upstream);
+        const upName = this.reflect.get(line.upstream);
         state.push(`${upName} <- ${currName}`);
         line = line.nextRecLine;
       }
@@ -54,5 +56,18 @@ export class DepStr {
     handled.sort();
     state.sort();
     expect(state).toEqual(handled);
+  }
+
+  outLinkIs( { ins } : {ins: Signal}, outLink: string) {
+    const links = outLink ? outLink.trim().split(/\s+/).sort() : [];
+    let point = ins.outLink;
+    const hasLinks = [];
+    while (point) {
+      const refedName = this.reflect.get(point.upstream);
+      hasLinks.push(refedName);
+      point = point.nextOutLink;
+    }
+    hasLinks.sort();
+    expect(hasLinks).toEqual(links);
   }
 }
