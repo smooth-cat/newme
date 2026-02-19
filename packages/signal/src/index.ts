@@ -1,11 +1,12 @@
 import { evt, G, State } from './global';
 import { Scheduler } from './schedule';
 import { dispose } from './scope';
-import { runWithPulling, Signal } from './signal';
+import { Signal } from './signal';
 import { Getter, Mix, ValueDiff } from './type';
 
 export { Scheduler, scheduler } from './schedule';
 export { TaskQueue } from './task';
+export { runWithPulling, clean } from './scope'
 export * from './type';
 
 const DefaultCustomSignalOpt = {

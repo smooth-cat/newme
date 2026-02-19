@@ -1,5 +1,5 @@
 import { dfs } from './dfs';
-import { ScopeAbort, State } from './global';
+import { G, ScopeAbort, State } from './global';
 import { Line } from './line';
 import type { Signal } from './signal';
 
@@ -93,7 +93,7 @@ export function dispose(this: Signal) {
         complete: ({ node: scope, notGoDeep }) => {
           const shouldAbort = !notGoDeep;
           if (shouldAbort) {
-            releaseRefedSignals(scope);
+            releaseScope(scope);
           }
         }
       });
@@ -106,11 +106,11 @@ export function dispose(this: Signal) {
     toDel = memoNext;
   }
   // 自身的外链也需要断开
-  releaseRefedSignals(this);
+  releaseScope(this);
   doUnlink(this.emitStart);
 }
 
-function releaseRefedSignals(scope: Signal) {
+function releaseScope(scope: Signal) {
   let outLink = scope.outLink;
   while (outLink) {
     const memoNext = outLink.nextOutLink;
@@ -118,4 +118,18 @@ function releaseRefedSignals(scope: Signal) {
     outLink = memoNext;
   }
   scope.state |= State.ScopeAbort;
+  // clean 在 scope 释放时执行
+  scope.clean?.();
+  scope.clean = null;
+}
+
+export function clean(cb: () => void) {
+  G.PullingSignal.clean = () => runWithPulling(cb, null) ;
+}
+
+export function runWithPulling(fn: Function, signal: Signal | null) {
+  const prevPulling = G.PullingSignal;
+  G.PullingSignal = signal;
+  fn();
+  G.PullingSignal = prevPulling;
 }

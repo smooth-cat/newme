@@ -51,7 +51,7 @@ export class Signal<T = any> implements Vertex {
   id = G.id++;
   state = State.Clean;
   /** 当前节点创建时处于的 effect 就是 scope */
-  scope: Signal = Signal.Pulling;
+  scope: Signal = G.PullingSignal;
   recEnd: Line = null;
   recStart: Line = null;
   emitStart: Line = null;
@@ -88,7 +88,7 @@ export class Signal<T = any> implements Vertex {
    * 递归拉取负责建立以来链
    */
   pullRecurse(shouldLink = true) {
-    let downstream = Signal.Pulling;
+    let downstream = G.PullingSignal;
 
     if (
       // 1. 外部支持 link
@@ -108,8 +108,9 @@ export class Signal<T = any> implements Vertex {
       // 进 pullShallow 前重置 recEnd，让子 getter 重构订阅链表
       this.recEnd = null;
 
-      Signal.Pulling = this;
-
+      G.PullingSignal = this;
+      this.clean?.();
+      this.clean = null;
       const v = this.pull();
       // 如果使用了 DEFAULT_PULL，处理一次 set 的取值后，替换回 customPull，如果有的话
       this.pull = this.customPull || this.DEFAULT_PULL;
@@ -126,7 +127,7 @@ export class Signal<T = any> implements Vertex {
       // 本 getter 执行完成时上游 getter 通过 link，完成对下游 recLines 的更新
       const toDel = this.recEnd?.nextRecLine;
       unlinkRecWithScope(toDel);
-      Signal.Pulling = downstream;
+      G.PullingSignal = downstream;
     }
   }
 
@@ -171,8 +172,8 @@ export class Signal<T = any> implements Vertex {
           }
           // 预检数据
           else {
-            const prevPulling = Signal.Pulling;
-            Signal.Pulling = downstream;
+            const prevPulling = G.PullingSignal;
+            G.PullingSignal = downstream;
             const prevValue = node.value;
             // 递归转用递归拉取，且不需要重建 link 因为dfs的前提就是上游节点依赖于 本节点
             node.pullRecurse(false);
@@ -181,7 +182,7 @@ export class Signal<T = any> implements Vertex {
               node.markDownStreamsDirty();
             }
             node.state &= ~State.Dirty;
-            Signal.Pulling = prevPulling;
+            G.PullingSignal = prevPulling;
             // 立刻返回父节点重新计算
             noGoSibling = true;
           }
@@ -258,11 +259,6 @@ export class Signal<T = any> implements Vertex {
       (this.state & State.IsScope && this.state & ScopeExecuted)
     );
   }
-}
-
-export function runWithPulling(fn: Function, signal: Signal | null) {
-  const prevPulling = Signal.Pulling;
-  Signal.Pulling = signal;
-  fn();
-  Signal.Pulling = prevPulling;
+  /** 记录当前 effect 中 clean */
+  clean: () => void = null;
 }

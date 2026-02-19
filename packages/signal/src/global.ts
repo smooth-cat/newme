@@ -10,8 +10,7 @@ export const G = {
   id: 0,
   /** scope 销毁任务序号 */
   scopeDisposeI: 0,
-  parentScope: null as Signal | null,
-  currentScope: null as Signal | null
+  PullingSignal: null as Signal | null
 };
 
 export const dirtyLeafs = new SortMap<Signal>();
