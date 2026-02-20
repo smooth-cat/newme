@@ -5,9 +5,18 @@ it('dep-str协助测试', () => {
 });
 export class DepStr {
   reflect = new Map();
-  constructor(public signals: Record<string, any>) {
+  signals: Record<string, Signal> = {};
+  constructor(signals: Record<string, any>) {
+    for (const key in signals) {
+      const signalOrDispose = signals[key];
+      if (signalOrDispose instanceof Signal) {
+        this.signals[key] = signalOrDispose;
+      } else {
+        this.signals[key] = signalOrDispose.ins;
+      }
+    }
     for (const key in this.signals) {
-      const curr = this.signals[key].ins as Signal;
+      const curr = this.signals[key];
       this.reflect.set(curr, key);
     }
   }
@@ -37,7 +46,7 @@ export class DepStr {
     const state = [];
 
     for (const key in this.signals) {
-      const curr = this.signals[key].ins as Signal;
+      const curr = this.signals[key] as Signal;
       const currName = this.reflect.get(curr);
       let line = curr.emitStart;
       while (line != null) {

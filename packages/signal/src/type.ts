@@ -12,6 +12,7 @@ export type SignalOpt<T> = {
   customPull?: () => T;
   scheduler?: string;
   isScope?: boolean;
+  immediate?: boolean;
 };
 
 export type Vertex = {
@@ -53,4 +54,9 @@ export type Mix<T = any> = {
 export type ValueDiff = {
   old: any;
   val: any;
+}
+
+export type Dispose = {
+  (): void;
+  ins: Signal;
 }

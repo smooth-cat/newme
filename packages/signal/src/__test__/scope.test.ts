@@ -17,7 +17,7 @@ describe('scope + signal 测试', () => {
         log.call(`d是${res}`);
         return res;
       });
-      d();
+      d.v;
     });
     const str = new DepStr({ a, b, B, c, d, scope: dispose });
     /*----------------- 初始依赖链 -----------------*/
@@ -81,11 +81,11 @@ describe('scope + signal 测试', () => {
         });
 
         // 访问信号以建立依赖关系
-        innerResult();
+        innerResult.v;
       });
 
       // 访问外层信号
-      outerResult();
+      outerResult.v;
 
       // 将内层dispose函数绑定到外层scope，这样可以测试嵌套行为
       (outerResult as any).innerDispose = innerDispose;
@@ -189,11 +189,11 @@ describe('scope + signal 测试', () => {
         });
 
         // 访问信号以建立依赖关系
-        innerResult();
+        innerResult.v;
       });
 
       // 访问外层信号
-      outerResult();
+      outerResult.v;
     });
 
     /*----------------- 初始依赖链 -----------------*/

@@ -2,7 +2,7 @@ import { dfs } from './dfs';
 import { dirtyLeafs, DirtyState, G, ScopeExecuted, State } from './global';
 import { Line } from './line';
 import { _scheduler } from './schedule';
-import { unlinkRecWithScope } from './scope';
+import { runWithPulling, unlinkRecWithScope } from './scope';
 import { SignalOpt, Vertex } from './type';
 
 const markDeep = (signal: Signal) => {
@@ -70,7 +70,7 @@ export class Signal<T = any> implements Vertex {
     private customPull?: () => T
   ) {}
 
-  static create<T>(nextValue: T, { customPull, isScope, ...rest }: SignalOpt<T>) {
+  static create<T>(nextValue: T, { customPull, isScope, immediate, ...rest }: SignalOpt<T>) {
     const s = new Signal(nextValue, customPull);
     s.pull = s.customPull || s.DEFAULT_PULL;
     Object.assign(s, rest);
@@ -89,6 +89,7 @@ export class Signal<T = any> implements Vertex {
    */
   pullRecurse(shouldLink = true) {
     let downstream = G.PullingSignal;
+    const isScope = this.state & State.IsScope;
 
     if (
       // 1. 外部支持 link
@@ -96,7 +97,7 @@ export class Signal<T = any> implements Vertex {
       // 2. 有下游
       downstream &&
       // 3. 下游是 watcher，不链接非 scope
-      !(downstream.state & State.LinkScopeOnly && !(this.state & State.IsScope))
+      !(downstream.state & State.LinkScopeOnly && !isScope)
     ) {
       Line.link(this, downstream);
     }
@@ -111,7 +112,12 @@ export class Signal<T = any> implements Vertex {
       G.PullingSignal = this;
       this.clean?.();
       this.clean = null;
-      const v = this.pull();
+      let v = this.pull();
+      if (isScope && typeof v === 'function') {
+        const fn = v;
+        this.clean = () => runWithPulling(fn, null);
+        v = this.value;
+      }
       // 如果使用了 DEFAULT_PULL，处理一次 set 的取值后，替换回 customPull，如果有的话
       this.pull = this.customPull || this.DEFAULT_PULL;
       this.value = v;
@@ -199,7 +205,7 @@ export class Signal<T = any> implements Vertex {
     return this.value;
   }
 
-  get() {
+  get v() {
     if (this.isDisabled()) {
       return this.value;
     }
@@ -229,7 +235,7 @@ export class Signal<T = any> implements Vertex {
     }
   }
 
-  set(v: T) {
+  set v(v: T) {
     if (this.isDisabled() || this.nextValue === v) {
       return;
     }
@@ -240,15 +246,8 @@ export class Signal<T = any> implements Vertex {
     markDeep(this as any);
   }
 
-  run(...args: any[]) {
-    if (args.length) {
-      return this.set(args[0]) as any;
-    }
-    return this.get();
-  }
-
   runIfDirty() {
-    this.state & (State.Unknown | State.Dirty) && this.run();
+    this.state & (State.Unknown | State.Dirty) && this.v;
   }
 
   isDisabled() {

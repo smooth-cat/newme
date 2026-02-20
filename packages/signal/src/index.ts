@@ -1,23 +1,24 @@
-import { evt, G, State } from './global';
+import { State } from './global';
 import { Scheduler } from './schedule';
 import { dispose } from './scope';
 import { Signal } from './signal';
-import { Getter, Mix, ValueDiff } from './type';
+import { Dispose, Getter, Mix, ValueDiff } from './type';
 
 export { Scheduler, scheduler } from './schedule';
 export { TaskQueue } from './task';
-export { runWithPulling, clean } from './scope'
+export { runWithPulling, clean } from './scope';
 export * from './type';
 
 const DefaultCustomSignalOpt = {
   scheduler: Scheduler.Sync,
-  isScope: false
+  isScope: false,
+  immediate: true
 };
 export type CustomSignalOpt = Partial<typeof DefaultCustomSignalOpt>;
 
 export type CreateSignal = {
-  <T extends (...args: any[]) => any>(get: T, opt?: CustomSignalOpt): Mix<ReturnType<T>>;
-  <T = any>(value: T, opt?: CustomSignalOpt): Mix<T>;
+  <T extends (...args: any[]) => any>(get: T, opt?: CustomSignalOpt): Signal<ReturnType<T>>;
+  <T = any>(value: T, opt?: CustomSignalOpt): Signal<T>;
 };
 
 export const $: CreateSignal = (init?: unknown) => {
@@ -33,20 +34,12 @@ export const $: CreateSignal = (init?: unknown) => {
     isScope: false,
     customPull
   });
-  const bound = s.run.bind(s);
-  bound.ins = s;
-  Object.defineProperty(bound, 'v', {
-    get() {
-      return s.get();
-    },
-    set(v) {
-      return s.set(v);
-    }
-  });
-  return bound as any;
+
+  return s;
 };
 
-export const watch = (values: Getter[], watcher: (...args: ValueDiff[]) => void, opt: CustomSignalOpt = {}) => {
+/** @deprecated */
+const watch = (values: Getter[], watcher: (...args: ValueDiff[]) => void, opt: CustomSignalOpt = {}) => {
   let mounted = false;
   const vs: ValueDiff[] = Array.from({ length: values.length }, () => ({ old: null, val: null }));
   const s = Signal.create(null, {
@@ -59,7 +52,7 @@ export const watch = (values: Getter[], watcher: (...args: ValueDiff[]) => void,
 
       if (mounted) {
         s.state |= State.LinkScopeOnly;
-        watcher(...vs)
+        watcher(...vs);
         s.state &= ~State.LinkScopeOnly;
       }
       mounted = true;
@@ -69,24 +62,64 @@ export const watch = (values: Getter[], watcher: (...args: ValueDiff[]) => void,
     ...opt
   });
 
-  s.get();
+  s.v;
   const bound = dispose.bind(s);
   bound.ins = s;
   return bound;
 };
 
-export const effect = (customPull: () => void, opt: CustomSignalOpt = {}) => {
+export const effect = (
+  customPull: (...args: ValueDiff[]) => void,
+  depOrOpt?: Signal<any>[] | CustomSignalOpt,
+  opt?: CustomSignalOpt
+) => {
+  /*----------------- 自动收集 -----------------*/
+  const hasDep = Array.isArray(depOrOpt);
+  opt = hasDep ? opt || {} : depOrOpt || {};
+  // 立即执行
+  if (!hasDep) {
+    const s = Signal.create(null, {
+      customPull,
+      scheduler: Scheduler.Sync,
+      isScope: true,
+      ...opt
+    });
+
+    s.v;
+    const bound = dispose.bind(s);
+    bound.ins = s;
+    return bound;
+  }
+
+  /*----------------- 指定依赖， watcher -----------------*/
+  let mounted = false;
+  const deps = depOrOpt as Signal[];
+  const immediate = deps.length === 0 ? true : (opt.immediate ?? true);
+  const vs: ValueDiff[] = Array.from({ length: deps.length }, () => ({ old: null, val: null }));
   const s = Signal.create(null, {
-    customPull,
+    customPull() {
+      for (let i = 0; i < deps.length; i++) {
+        const value = deps[i].v;
+        vs[i].old = vs[i].val;
+        vs[i].val = value;
+      }
+
+      if (mounted || immediate) {
+        s.state |= State.LinkScopeOnly;
+        customPull(...vs);
+        s.state &= ~State.LinkScopeOnly;
+      }
+      mounted = true;
+    },
     scheduler: Scheduler.Sync,
     isScope: true,
     ...opt
   });
 
-  s.get();
+  s.v;
   const bound = dispose.bind(s);
   bound.ins = s;
-  return bound;
+  return bound as Dispose;
 };
 
 export const scope = (customPull: () => void) => {
@@ -96,12 +129,12 @@ export const scope = (customPull: () => void) => {
     isScope: true
   });
 
-  s.get();
+  s.v;
   s.state |= State.ScopeReady;
 
   const bound = dispose.bind(s);
   bound.ins = s;
-  return bound;
+  return bound as Dispose;
 };
 
 /**
@@ -115,70 +148,3 @@ export const customEffect = (opt?: CustomSignalOpt) => {
     return effect(init, { ...opt, ...innerOpt });
   }) as typeof effect;
 };
-/**
- * 数据变化时，自定义 触发订阅函数的时机
- * @param {CustomSignalOpt} opt 配置如下:
- * @prop scheduler: (runIfDirty, effect) => void 执行 runIfDirty 定制触发 effect 时机
- * @prop scope: 用于统一释放 effect link 的作用域 默认是 defaultScope 可以全局获取
- */
-export const customWatch = (opt?: CustomSignalOpt) => {
-  return ((init: any, innerOpt: any = {}) => {
-    return watch(init, { ...opt, ...innerOpt });
-  }) as typeof watch;
-};
-// const globalSignal = $(10);
-
-// let outerA, outerB, innerX, innerY, outerResult, innerResult, innerDispose;
-
-// const outerDispose = scope(() => {
-//   outerA = $(1);
-//   outerB = $(2);
-
-//   // 外层计算信号
-//   outerResult = $(() => {
-//     const res = globalSignal.v + outerA.v + outerB.v;
-//     return res;
-//   });
-
-//   innerDispose = scope(() => {
-//     innerX = $(3);
-//     innerY = $(4);
-
-//     // 内层计算信号，既依赖内层也依赖外层信号
-//     innerResult = $(() => {
-//       const res = outerA.v + innerX.v + innerY.v;
-//       return res;
-//     });
-
-//     // 访问信号以建立依赖关系
-//     innerResult();
-//   });
-
-//   // 访问外层信号
-//   outerResult();
-
-//   // 将内层dispose函数绑定到外层scope，这样可以测试嵌套行为
-//   (outerResult as any).innerDispose = innerDispose;
-// });
-// outerA.v = 5;
-// innerX.v = 6;
-// globalSignal.v = 20;
-// // 先释放内层scope
-// innerDispose();
-
-// innerX.v = 7;
-// outerA.v = 8;
-
-// outerDispose();
-
-// evt.on('one', ({ index }) => {
-//   switch (index) {
-//     case 0:
-//       console.log({ index });
-//       break;
-//     case 1:
-//       console.log({ index });
-//     default:
-//       break;
-//   }
-// });
