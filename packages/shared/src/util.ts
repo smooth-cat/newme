@@ -91,7 +91,7 @@ export class Queue<T> {
   }
   /** TODO: Queue.len 不准确 */
   subRef(firstItem: QueueItem<T>, lastItem: QueueItem<T>) {
-    const subQueue = new Queue<T>()
+    const subQueue = new Queue<T>();
     subQueue._first = firstItem;
     subQueue._last = lastItem;
     return subQueue;
@@ -156,6 +156,9 @@ export function pick<T, K extends keyof T>(obj: T, keys: K[]) {
     {} as Pick<T, K>
   );
 }
+
+const NatureNum = /^(0|[1-9]\d*)$/;
+export const isNatureNumStr = (val: unknown) => typeof val === 'string' && NatureNum.test(val);
 
 // const queue = new Queue([1,2,3,4]);
 // queue.shift()

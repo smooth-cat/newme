@@ -11,6 +11,19 @@ export abstract class Scheduler {
   static Macro = '__Macro_';
 
   effectQueue: Queue<Signal> = new Queue();
+  /** 每当 Set 或 BatchSet 开始时标记 */
+  firstEffectItem: QueueItem<Signal> = null;
+  /** 记录 Set 或 BatchSet 产生的最后一个 Effect */
+  lastEffectItem: QueueItem<Signal> = null;
+
+  endSet() {
+    if(!this.firstEffectItem) return;
+    const subQueue = this.effectQueue.subRef(this.firstEffectItem, this.lastEffectItem);
+    this.onOneSetEffectsAdded?.(subQueue, this.effectQueue)
+    this.firstEffectItem = null;
+    this.lastEffectItem = null;
+  }
+
   addEffect(effect: Signal) {
     const item = this.effectQueue.push(effect);
     this.onEffectAdded?.(effect, item, this.effectQueue);

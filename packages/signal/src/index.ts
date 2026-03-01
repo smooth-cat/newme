@@ -9,6 +9,7 @@ export { Scheduler, registerScheduler } from './schedule';
 export { TaskQueue } from './task';
 export { runWithPulling, clean } from './scope';
 export * from './type';
+export { batch } from './batch-set';
 const DefaultCustomSignalOpt = {
   /** 三种模式
    * 1. auto:   根据值类型自动判断 默认

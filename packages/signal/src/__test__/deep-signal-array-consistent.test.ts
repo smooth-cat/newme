@@ -219,7 +219,7 @@ describe('Proxy Array Methods', () => {
       originalArray.sort((a, b) => a - b);
       proxyArray.sort((a, b) => a - b);
 
-      expect(proxyArray).toEqual(originalArray);
+      expect([...proxyArray]).toEqual(originalArray);
     });
   });
 

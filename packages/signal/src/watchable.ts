@@ -1,9 +1,11 @@
+import { isNatureNumStr } from 'bobe-shared';
 import { G, rawToProxy } from './global';
 import { Scheduler } from './schedule';
 import { runWithPulling } from './scope';
 import { Signal } from './signal';
 import { Keys } from './type';
 import { toRaw } from './util';
+import { batch } from './batch-set';
 
 export const deepSignal = <T>(target: T, scope: Signal, deep = true) => {
   const isObj = typeof target === 'object' && target !== null;
@@ -57,13 +59,21 @@ export const deepSignal = <T>(target: T, scope: Signal, deep = true) => {
     },
 
     set(obj, prop, value, receiver) {
+      // 数组项 set 可能出现 Iterator 设置，用 batch 避免 effect 多次执行
+      batch.start();
+      const success = Reflect.set(obj, prop, value, receiver);
       // 已有对应 Signal，更新 signal 值
       if (cells.has(prop)) {
         const cell = cells.get(prop);
         cell.v = deep ? deepSignal(value, scope) : value;
       }
+
+      if (targetIsArray) {
+        handleArraySet(obj, prop, value, receiver);
+      }
+      batch.end();
       // 保持原始对象干净
-      return Reflect.set(obj, prop, value, receiver);
+      return success;
     },
 
     // 【核心修改】拦截 delete 操作
@@ -90,13 +100,29 @@ export const deepSignal = <T>(target: T, scope: Signal, deep = true) => {
   return proxy;
 };
 
+function handleArraySet(arr: object, prop: string | symbol, value: any, receiver: any) {
+  // 设置 length
+  if (prop === 'length') {
+  }
+  // 设置 index，由于 includes 等方法不对 index 再做监听，通过 Keys.Iterator 来保证副作用正确执行
+  else if (isNatureNumStr(prop)) {
+    receiver[Keys.Iterator] = (arr[Keys.Iterator] || 0) + 1;
+  }
+  // 其他
+  else {
+  }
+}
+
 const arrayMethodReWrites: any = {};
 /*----------------- 增删移 增加 __Iterator Set ✅ -----------------*/
 ['pop', 'push', 'shift', 'splice', 'unshift', 'copyWithin', 'reverse', 'fill'].forEach(key => {
   arrayMethodReWrites[key] = function (...args: any[]) {
+    batch.start();
     const fn = Array.prototype[key];
+    // 不会进行依赖收集，但是会触发 set
     const res = runWithPulling(() => fn.call(this, ...args), null);
     this[Keys.Iterator] = (this[Keys.Raw][Keys.Iterator] || 0) + 1;
+    batch.end();
     return res;
   };
 });

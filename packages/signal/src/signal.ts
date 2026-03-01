@@ -5,11 +5,10 @@ import { Line } from './line';
 import { _scheduler } from './schedule';
 import { runWithPulling, unlinkRecWithScope } from './scope';
 import { SignalOpt, Vertex } from './type';
+import { batch } from './batch-set';
 
 const markDeep = (signal: Signal) => {
   let level = 0,
-    firstEffectItem: QueueItem<Signal>,
-    lastEffectItem: QueueItem<Signal>,
     updatedSchedulers = new Set<string>();
   dfs(signal, {
     isUp: false,
@@ -42,18 +41,21 @@ const markDeep = (signal: Signal) => {
         const key = node.scheduler;
         const instance = _scheduler[key];
         const item = instance.addEffect(node);
-        if (!firstEffectItem) {
-          firstEffectItem = item;
+        if (!instance.firstEffectItem) {
+          instance.firstEffectItem = item;
         }
-        lastEffectItem = item;
+        instance.lastEffectItem = item;
         updatedSchedulers.add(key);
       }
       level++;
     }
   });
-  for (const key of updatedSchedulers) {
+  // batch 操作通过 endBatch 触发
+  if (batch.inBatch()) return;
+
+  for (const key in _scheduler) {
     const instance = _scheduler[key];
-    instance?.onOneSetEffectsAdded(instance.effectQueue.subRef(firstEffectItem, lastEffectItem), instance.effectQueue);
+    instance.endSet();
   }
 };
 
@@ -96,7 +98,7 @@ export class Signal<T = any> implements Vertex {
     if (isScope) {
       s.state |= State.IsScope;
     }
-    if(scope !== undefined) {
+    if (scope !== undefined) {
       s.scope = scope;
     }
     return s;
