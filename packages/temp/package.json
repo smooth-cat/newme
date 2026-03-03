@@ -1,6 +1,6 @@
 {
   "name": "__name__",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "main": "dist/__name__.cjs.js",
   "module": "dist/__name__.esm.js",
   "browser": "dist/__name__.umd.js",
