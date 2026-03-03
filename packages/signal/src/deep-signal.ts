@@ -31,6 +31,14 @@ export const deepSignal = <T>(target: T, scope: Signal, deep = true) => {
           break;
       }
 
+      const desc = Reflect.getOwnPropertyDescriptor(obj, prop);
+
+      const isGetter = desc && typeof desc.get === 'function';
+
+      if (isGetter) {
+        return handleGetterAsComputed(obj, prop, receiver, cells, scope);
+      }
+
       // 创建 Signal
       const value = Reflect.get(obj, prop, receiver);
 
@@ -99,6 +107,27 @@ export const deepSignal = <T>(target: T, scope: Signal, deep = true) => {
   rawToProxy.set(target, proxy);
   return proxy;
 };
+
+function handleGetterAsComputed(
+  obj: object,
+  prop: string | symbol,
+  receiver: any,
+  cells: Map<any, Signal>,
+  scope: Signal
+) {
+  if (cells.has(prop)) {
+    return cells.get(prop).v;
+  }
+
+  const s = Signal.create(null, {
+    customPull: () => Reflect.get(obj, prop, receiver),
+    scheduler: Scheduler.Sync,
+    isScope: false,
+    scope
+  });
+  cells.set(prop, s);
+  return s.v;
+}
 
 function handleArraySet(arr: object, prop: string | symbol, value: any, receiver: any) {
   // 设置 length

@@ -1,4 +1,4 @@
-import { Queue, QueueItem } from 'bobe-shared';
+import { Queue, QueueItem, SubQueue } from 'bobe-shared';
 import type { Signal } from './signal';
 import { TaskQueue } from './task';
 import { Task } from './type';
@@ -42,7 +42,7 @@ export abstract class Scheduler {
    * 一次 set 操作导致的所有 effect 加入队列后的 回调
    * */
   // @ts-ignore
-  onOneSetEffectsAdded(subQueue: Queue<Signal>, queue: Queue<Signal>): void;
+  onOneSetEffectsAdded(subQueue: SubQueue<Signal>, queue: Queue<Signal>): void;
 }
 
 class SyncScheduler extends Scheduler {
@@ -50,7 +50,7 @@ class SyncScheduler extends Scheduler {
     subQueue.forEach((effect, item) => {
       // 循环依赖时会跳过已经在执行的 effect
       effect.runIfDirty();
-      subQueue.delete(item);
+      queue.delete(item);
     });
   }
 }
@@ -62,7 +62,7 @@ class MicroScheduler extends Scheduler {
       subQueue.forEach((effect, item) => {
         // 循环依赖时会跳过已经在执行的 effect
         effect.runIfDirty();
-        subQueue.delete(item);
+        queue.delete(item);
       });
       return {
         finished: true,
@@ -81,7 +81,7 @@ class MacroScheduler extends Scheduler {
       subQueue.forEach((effect, item) => {
         // 循环依赖时会跳过已经在执行的 effect
         effect.runIfDirty();
-        subQueue.delete(item);
+        queue.delete(item);
       });
     };
     task.time = Date.now();
@@ -96,7 +96,7 @@ class LayoutScheduler extends Scheduler {
       subQueue.forEach((effect, item) => {
         // 循环依赖时会跳过已经在执行的 effect
         effect.runIfDirty();
-        subQueue.delete(item);
+        queue.delete(item);
       });
     };
     task.time = Date.now();

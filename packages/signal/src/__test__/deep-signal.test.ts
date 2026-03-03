@@ -311,3 +311,101 @@ describe('deep-signal with scope and cleanup', () => {
     expect(cleanupLog).toHaveLength(2);
   });
 });
+
+describe('deep-signal with getters', () => {
+  it('should properly handle objects with getters', () => {
+    const baseObj = {
+      firstName: 'John',
+      lastName: 'Doe',
+      get fullName() {
+        return `${this.firstName} ${this.lastName}`;
+      }
+    };
+
+    const obj = $(baseObj);
+
+    let executionCount = 0;
+    let capturedFullName;
+
+    effect(() => {
+      executionCount++;
+      capturedFullName = obj.fullName;
+    });
+
+    expect(capturedFullName).toBe('John Doe');
+    expect(executionCount).toBe(1);
+
+    obj.firstName = 'Jane';
+    expect(capturedFullName).toBe('Jane Doe');
+    expect(executionCount).toBe(2);
+
+    obj.lastName = 'Smith';
+    expect(capturedFullName).toBe('Jane Smith');
+    expect(executionCount).toBe(3);
+  });
+
+  it('should track dependencies when accessing getter values', () => {
+    const obj = $({
+      value: 10,
+      get doubled() {
+        return this.value * 2;
+      },
+      get tripled() {
+        return this.value * 3;
+      }
+    });
+
+    let doubledResult, tripledResult;
+    let doubledExecutions = 0;
+    let tripledExecutions = 0;
+
+    effect(() => {
+      doubledExecutions++;
+      doubledResult = obj.doubled;
+    });
+
+    effect(() => {
+      tripledExecutions++;
+      tripledResult = obj.tripled;
+    });
+
+    expect(doubledResult).toBe(20);
+    expect(tripledResult).toBe(30);
+    expect(doubledExecutions).toBe(1);
+    expect(tripledExecutions).toBe(1);
+
+    obj.value = 5;
+
+    expect(doubledResult).toBe(10);
+    expect(tripledResult).toBe(15);
+    expect(doubledExecutions).toBe(2);
+    expect(tripledExecutions).toBe(2);
+  });
+
+  it('should handle nested objects with getters', () => {
+    const obj = $({
+      user: {
+        firstName: 'Alice',
+        lastName: 'Johnson',
+        get displayName() {
+          return `${this.firstName} ${this.lastName}`;
+        }
+      }
+    });
+
+    let executionCount = 0;
+    let capturedDisplay;
+
+    effect(() => {
+      executionCount++;
+      capturedDisplay = obj.user.displayName;
+    });
+
+    expect(capturedDisplay).toBe('Alice Johnson');
+    expect(executionCount).toBe(1);
+
+    obj.user.firstName = 'Bob';
+    expect(capturedDisplay).toBe('Bob Johnson');
+    expect(executionCount).toBe(2);
+  });
+});

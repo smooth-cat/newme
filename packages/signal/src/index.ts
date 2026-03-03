@@ -3,7 +3,7 @@ import { Scheduler } from './schedule';
 import { dispose } from './scope';
 import { Signal } from './signal';
 import { Dispose, Getter, Mix, SignalType, ValueDiff } from './type';
-import { deepSignal } from './watchable';
+import { deepSignal } from './deep-signal';
 
 export { Scheduler, registerScheduler } from './schedule';
 export { TaskQueue } from './task';

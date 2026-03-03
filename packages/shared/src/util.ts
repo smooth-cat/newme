@@ -94,7 +94,7 @@ export class Queue<T> {
     const subQueue = new Queue<T>();
     subQueue._first = firstItem;
     subQueue._last = lastItem;
-    return subQueue;
+    return subQueue as SubQueue<T>;
   }
 
   shift() {
@@ -113,6 +113,8 @@ export class Queue<T> {
     return c;
   }
 }
+
+export type SubQueue<T> = Omit<Queue<T>, 'push' | 'insetAfter' | 'delete' | 'shift'>;
 
 export function isNum(char: string) {
   return (
