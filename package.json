@@ -21,7 +21,7 @@
     "new": "node ./scripts/new.js",
     "build": "pnpm -r --filter \"!./packages/temp/**\" build",
     "ver": "pnpm -r exec npm version patch --no-git-tag-version",
-    "log": "npm login --registry=https://registry.npmjs.com",
-    "pub": "pnpm -r publish  --access=public --registry=\"https://registry.npmjs.com\" --no-git-checks"
+    "log": "npm login --registry=https://registry.npmjs.org",
+    "pub": "pnpm -r publish  --access=public --registry=\"https://registry.npmjs.org\" --no-git-checks"
   }
 }
