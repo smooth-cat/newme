@@ -51,6 +51,8 @@ jobs:
           # 注意：这里的 //registry.npmjs.org/:_authToken 是固定格式
           echo "//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}" > .npmrc
 
+          pnpm log
+
           # 1. 更新版本（使用 -r 对所有子包生效，--no-git-tag-version 防止重复生成 tag）
           pnpm -r exec npm version ${{ github.event.inputs.release_type }} --no-git-tag-version
           # 2. 获取更新后的主包版本号（用于后续 commit 信息）
