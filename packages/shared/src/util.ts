@@ -161,6 +161,30 @@ export function pick<T, K extends keyof T>(obj: T, keys: K[]) {
 
 const NatureNum = /^(0|[1-9]\d*)$/;
 export const isNatureNumStr = (val: unknown) => typeof val === 'string' && NatureNum.test(val);
+/**
+ * 替代 /[\$\d\w\/]/.test(char) 的高性能版本
+ * @param {string} char - 传入的单个字符
+ * @returns {boolean}
+ */
+export const matchIdStart = (char: string) => {
+  // 获取第一个字符的 Unicode 编码
+  const code = char.charCodeAt(0);
+
+  // 1. 数字 0-9 (48-57)
+  return (
+    (code >= 48 && code <= 57) ||
+    // 2. 大写字母 A-Z (65-90)
+    (code >= 65 && code <= 90) ||
+    // 3. 小写字母 a-z (97-122)
+    (code >= 97 && code <= 122) ||
+    // 4. 下划线 _ (95)
+    code === 95 ||
+    // 5. 斜杠 / (47)
+    code === 47 ||
+    // 5. $ / (36)
+    code === 36
+  );
+};
 
 // const queue = new Queue([1,2,3,4]);
 // queue.shift()

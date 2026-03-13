@@ -1,4 +1,4 @@
-import { isNum, Queue } from 'bobe-shared';
+import { isNum, matchIdStart, Queue } from 'bobe-shared';
 import { BaseType, Hook, HookProps, HookType, Token, TokenType } from './type';
 
 export class Tokenizer {
@@ -6,8 +6,6 @@ export class Tokenizer {
   TabSize = 2;
   /** 缩进字符 */
   Tab = Array.from({ length: this.TabSize }, () => ' ').join('');
-  /** 匹配标识符 */
-  static IdExp = /[\d\w\/]/;
   /** Eof 标识符的值 */
   static EofId = `__EOF__${Date.now()}`;
   static DedentId = `__DEDENT__${Date.now()}`;
@@ -77,18 +75,18 @@ export class Tokenizer {
     let skipFragment = ``;
     this.token = undefined;
     while (1) {
-      const char = this.char;
+      const char = this.code[this.i];
 
       if (char === '\n') {
         needIndent = true;
         skipFragment += char;
-        this.next();
+        this.i++;
         continue;
       }
 
       if (!needIndent) {
         skipFragment += char;
-        this.next();
+        this.i++;
         continue;
       }
 
@@ -156,24 +154,7 @@ export class Tokenizer {
     // 刚开始时 token 不存在
     if (!this.token) return false;
     return this.token.type & TokenType.Identifier && this.token.value === Tokenizer.EofId;
-    // return this.char === undefined;
-  }
-
-  get char() {
-    return this.code[this.i];
-  }
-  get prev() {
-    return this.code[this.i - 1];
-  }
-  get after() {
-    return this.code[this.i + 1];
-  }
-
-  private next() {
-    const prev = this.code[this.i];
-    this.i++;
-    const curr = this.code[this.i];
-    return [prev, curr] as [prev: string, curr: string];
+    // return this.code[this.i] === undefined;
   }
 
   private setToken(type: TokenType, value: BaseType) {
@@ -185,12 +166,7 @@ export class Tokenizer {
     this.isFirstToken = false;
   }
 
-  private testId(value: string) {
-    if (typeof value !== 'string') return false;
-    return Tokenizer.IdExp.test(value);
-  }
-
-  private nextToken() {
+  public nextToken(): Token {
     try {
       // 已遍历到文件结尾
       if (this.isEof()) {
@@ -207,7 +183,7 @@ export class Tokenizer {
           this.dent();
           // 遍历到当前标识符非 空白为止
         } else {
-          let { char } = this;
+          const char = this.code[this.i];
           switch (char) {
             case '\t':
             case ' ':
@@ -240,14 +216,13 @@ export class Tokenizer {
                 this.number(char);
                 break;
               }
-
-              if (this.testId(char)) {
+              if (typeof char === 'string' && matchIdStart(char)) {
                 this.identifier(char);
               }
               break;
           }
           // 指向下一个字符
-          this.next();
+          this.i++;
         }
 
         // 找到 token 即可停止
@@ -258,6 +233,7 @@ export class Tokenizer {
       return this.token;
     } catch (error) {
       console.error(error);
+      return this.token;
     } finally {
       this.handledTokens.push(this.token);
     }
@@ -270,19 +246,19 @@ export class Tokenizer {
     this.setToken(TokenType.Pipe, '|');
   }
   private dynamic(char: string) {
-    let nextC = this.after;
+    let nextC = this.code[this.i + 1];
     // 不是动态插值
     if (nextC !== '{') {
       return false;
     }
-    this.next();
+    this.i++;
     let value = '${';
     let innerBrace = 0;
     while (1) {
-      nextC = this.after;
+      nextC = this.code[this.i + 1];
       value += nextC;
       // 下一个属于本标识符再前进
-      this.next();
+      this.i++;
       if (nextC === '{') {
         innerBrace++;
       }
@@ -306,15 +282,16 @@ export class Tokenizer {
       value = '',
       backslashCount = 0; // 用于记录连续的反斜杠数量
     while (1) {
-      const char = this.char;
-      const nextChar = this.after;
+      const char = this.code[this.i];
+      const nextChar = this.code[this.i + 1];
 
       // 1. 处理注释状态退出
       if (inComment === 'single' && char === '\n') {
         inComment = null;
       } else if (inComment === 'multi' && char === '*' && nextChar === '/') {
         inComment = null;
-        value += this.next()[0]; // 跳过 * 号
+        value += this.code[this.i];
+        this.i++;
       }
       // 2. 如果不在注释中，处理字符串状态
       else if (inString) {
@@ -327,10 +304,12 @@ export class Tokenizer {
         // 3. 进入注释或字符串状态
         if (char === '/' && nextChar === '/') {
           inComment = 'single';
-          value += this.next()[0]; // 跳过 / 号
+          value += this.code[this.i]; // 跳过 / 号
+          this.i++;
         } else if (char === '/' && nextChar === '*') {
           inComment = 'multi';
-          value += this.next()[0]; // 跳过 / 号
+          value += this.code[this.i]; // 跳过 / 号
+          this.i++;
         } else if (char === "'" || char === '"' || char === '`') {
           inString = char;
         }
@@ -346,7 +325,8 @@ export class Tokenizer {
         this.setToken(TokenType.InsertionExp, value.slice(1));
         return;
       }
-      value += this.next()[0];
+      value += this.code[this.i];
+      this.i++;
     }
   }
 
@@ -354,13 +334,13 @@ export class Tokenizer {
     let value = '\n';
     let nextC;
     while (1) {
-      nextC = this.after;
+      nextC = this.code[this.i + 1];
       if (nextC !== '\n') {
         break;
       }
       value += nextC;
       // 下一个属于本标识符再前进
-      this.next();
+      this.i++;
     }
     // Program 希望第一个 token 一定是 node 节点
     if (this.isFirstToken) {
@@ -374,7 +354,7 @@ export class Tokenizer {
     let isEmptyLine = false;
     // 构建缩进字符串
     while (1) {
-      const nextChar = this.char;
+      const nextChar = this.code[this.i];
 
       switch (nextChar) {
         case '\t':
@@ -400,7 +380,7 @@ export class Tokenizer {
         break;
       }
       value += nextC;
-      this.next();
+      this.i++;
     }
     return {
       value,
@@ -426,7 +406,7 @@ export class Tokenizer {
     const prevLen = this.dentStack[this.dentStack.length - 1];
     if (currLen > prevLen) {
       this.dentStack.push(currLen);
-      this.setToken(TokenType.Indent, String(currLen));
+      this.setToken(TokenType.Indent, currLen);
       return indentHasLen;
     }
     if (currLen < prevLen) {
@@ -495,12 +475,12 @@ export class Tokenizer {
     let value = char;
     let nextC;
     while (1) {
-      nextC = this.after;
-      if (!this.testId(nextC)) {
+      nextC = this.code[this.i + 1];
+      if (typeof nextC !== 'string' || !matchIdStart(nextC)) {
         break;
       }
       value += nextC;
-      this.next();
+      this.i++;
     }
     if (value === Tokenizer.EofId && this.isSubToken) {
       this.setToken(TokenType.Dedent, '');
@@ -520,38 +500,38 @@ export class Tokenizer {
     this.setToken(TokenType.Identifier, realValue);
   }
   private str(char: string) {
-    let value = '"';
+    let value = '';
     let nextC;
     let continuousBackslashCount = 0;
     while (1) {
-      nextC = this.after;
-      value += nextC;
+      nextC = this.code[this.i + 1];
       const memoCount = continuousBackslashCount;
       if (nextC === '\\') {
         continuousBackslashCount++;
       } else {
         continuousBackslashCount = 0;
       }
-      this.next();
+      this.i++;
       /**
        * 引号前 \ 为双数时，全都是字符 \
        *  */
       if (nextC === char && memoCount % 2 === 0) {
         break;
       }
+      value += nextC;
     }
-    this.setToken(TokenType.Identifier, JSON.parse(value.slice(0, -1) + '"'));
+    this.setToken(TokenType.Identifier, value);
   }
   private number(char: string) {
     let value = char;
     let nextC;
     while (1) {
-      nextC = this.after;
+      nextC = this.code[this.i + 1];
       if (!isNum(nextC)) {
         break;
       }
       value += nextC;
-      this.next();
+      this.i++;
     }
     this.setToken(TokenType.Identifier, Number(value));
   }

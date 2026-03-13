@@ -42,7 +42,7 @@ export class Line {
     }
     // v1 和 v2 处于不同 scope，v1 不是 scope
     // => v1 是外部 signal
-    if (line && v2.scope && v1.scope !== v2.scope && !(v1.state & State.IsScope)) {
+    if (line && v2.scope && v1.scope !== v2.scope && (v1.state & State.IsScope) === 0) {
       const first = v2.scope.outLink;
       if (!first) {
         v2.scope.outLink = line;

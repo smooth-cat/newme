@@ -88,7 +88,7 @@ export function dispose(this: Signal) {
         begin: ({ node }) => {
           // 1. 不是 scope 直接忽略
           // 2. 已完成标记 或 清理
-          if (!(node.state & State.IsScope) || node.state & ScopeAbort) return true;
+          if ((node.state & State.IsScope) === 0 || node.state & ScopeAbort) return true;
         },
         complete: ({ node: scope, notGoDeep }) => {
           const shouldAbort = !notGoDeep;

@@ -94,50 +94,37 @@ export class MultiTypeStack<T> {
     return this.top?.value;
   }
 
-  /**
-   * 1. 全局向前遍历 (不分类)
-   * 从栈顶开始，沿着全局链条向栈底遍历
-   */
-  forEach(callback: (value: T, types: number) => any): void {
-    let current = this.top;
+  // /**
+  //  * 1. 全局向前遍历 (不分类)
+  //  * 从栈顶开始，沿着全局链条向栈底遍历
+  //  */
+  // forEach(callback: (value: T, types: number) => any): void {
+  //   let current = this.top;
 
-    while (current !== null) {
-      // 执行回调，如果返回 false 则立即停止
-      const shouldBreak = callback(current.value, current.types);
-      if (shouldBreak) break;
+  //   while (current !== null) {
+  //     // 执行回调，如果返回 false 则立即停止
+  //     const shouldBreak = callback(current.value, current.types);
+  //     if (shouldBreak) break;
 
-      current = current.prevGlobal;
-    }
-  }
+  //     current = current.prevGlobal;
+  //   }
+  // }
 
-  /**
-   * 2. 按类别向前遍历
-   * 仅遍历属于指定类别 cat 的节点
-   */
-  forEachByType(cat: number, callback: (value: T) => any): void {
-    // 从该类别的当前“顶端”节点开始
-    let current = this.typeTops[cat];
+  // /**
+  //  * 2. 按类别向前遍历
+  //  * 仅遍历属于指定类别 cat 的节点
+  //  */
+  // forEachByType(cat: number, callback: (value: T) => any): void {
+  //   // 从该类别的当前“顶端”节点开始
+  //   let current = this.typeTops[cat];
 
-    while (current) {
-      const shouldBreak = callback(current.value);
-      if (shouldBreak) break;
+  //   while (current) {
+  //     const shouldBreak = callback(current.value);
+  //     if (shouldBreak) break;
 
-      // 关键点：直接跳向该节点记录的“上一个同类节点”
-      // 这比遍历全局栈再筛选类别要快得多 (O(m) vs O(n))
-      current = current.prevByType[cat];
-    }
-  }
-}
-
-export function forkCxt(old: MultiTypeStack<StackItem>) {
-  const stack = new MultiTypeStack<StackItem>();
-  const temp: any[] = [];
-  old.forEach((item, types) => {
-    temp.push([item, types]);
-    if (types & NodeSort.Component) return true;
-  });
-  temp.forEach(args => {
-    stack.push.apply(stack, args);
-  });
-  return stack;
+  //     // 关键点：直接跳向该节点记录的“上一个同类节点”
+  //     // 这比遍历全局栈再筛选类别要快得多 (O(m) vs O(n))
+  //     current = current.prevByType[cat];
+  //   }
+  // }
 }

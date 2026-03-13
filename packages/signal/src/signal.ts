@@ -1,4 +1,3 @@
-import { QueueItem } from 'bobe-shared';
 import { dfs } from './dfs';
 import { DirtyState, G, ScopeExecuted, State } from './global';
 import { Line } from './line';
@@ -60,11 +59,16 @@ const markDeep = (signal: Signal) => {
 };
 
 const pullingPostprocess = (node: Signal) => {
-  node.state &= ~State.Pulling;
-  if (node.state & State.PullingUnknown) {
-    node.state &= ~State.PullingUnknown;
-    node.state |= State.Unknown;
+  let s = node.state;
+  s &= ~State.Pulling; // 移除 Pulling 状态
+
+  if (s & State.PullingUnknown) {
+    // 同时移除 PullingUnknown 并加上 Unknown
+    // 使用位掩码：s = (s & ~State.PullingUnknown) | State.Unknown
+    s = (s & ~State.PullingUnknown) | State.Unknown;
   }
+  
+  node.state = s;
 };
 
 export class Signal<T = any> implements Vertex {
@@ -94,6 +98,7 @@ export class Signal<T = any> implements Vertex {
   static create<T>(nextValue: T, { customPull, isScope, scope, immediate, ...rest }: SignalOpt<T>) {
     const s = new Signal(nextValue, customPull);
     s.pull = s.customPull || s.DEFAULT_PULL;
+    // TODO: 性能优化 0,1ms
     Object.assign(s, rest);
     if (isScope) {
       s.state |= State.IsScope;
@@ -123,7 +128,7 @@ export class Signal<T = any> implements Vertex {
       // 2. 有下游
       downstream &&
       // 3. 下游是 watcher，不链接非 scope
-      (!(downstream.state & State.LinkScopeOnly) || isScope)
+      ((downstream.state & State.LinkScopeOnly) === 0 || isScope)
     ) {
       Line.link(this, downstream);
     }
@@ -181,7 +186,7 @@ export class Signal<T = any> implements Vertex {
            * 2. 干净
            * 3. 放弃 或者为 scope 节点
            */
-          if (node.state & (State.Pulling | State.Dirty) || !(node.state & DirtyState) || node.isDisabled()) {
+          if (node.state & (State.Pulling | State.Dirty) || (node.state & DirtyState) === 0 || node.isDisabled()) {
             return true;
           }
           node.state |= State.Pulling;
@@ -245,7 +250,7 @@ export class Signal<T = any> implements Vertex {
       // 2. 有下游
       downstream &&
       // 3. 下游是 watcher 不是 watch，或 是watcher 但 当前是 scope
-      (!(downstream.state & State.LinkScopeOnly) || this.state & State.IsScope)
+      ((downstream.state & State.LinkScopeOnly) === 0 || this.state & State.IsScope)
     ) {
       Line.link(this, downstream);
     }

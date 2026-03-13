@@ -36,7 +36,12 @@
       }
     },
     insertAfter (parent, node, prev) {
-      parent.insertBefore(node, prev?.nextSibling)
+      // 没有前置节点的情况下，可能有 anchor 占据 firstChild ，所以这里应该插入在 firstChild 前
+      if (!prev) {
+        parent.insertBefore(node, parent.firstChild);
+      } else {
+        parent.insertBefore(node, prev.nextSibling)
+      }
     },
     createAnchor () {
       return document.createComment('aoye');
@@ -78,7 +83,7 @@
     show2 = true;
     name = '米龙';
 
-    update = () => {
+    update1 = () => {
       this.show1 = !this.show1;
     }
     update2 = () => {
@@ -87,8 +92,16 @@
 
     ui = bobe`
       header
-        ${Deep} deep=100     
         h1 text={name}
+        ${Deep} deep=1000
+        button style="cursor: pointer;" text={'show1:'+show1} onclick={update1}
+        button style="cursor: pointer;" text={'show2:'+show2} onclick={update2}
+        if {show1}
+          div text='show1'
+        if {show2}
+          div text='show2'
+        else
+          div text='show2-fail'
         nav
           ul
             li

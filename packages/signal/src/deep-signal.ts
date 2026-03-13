@@ -12,7 +12,8 @@ export const deepSignal = <T>(target: T, scope: Signal, deep = true) => {
   // 1. 不是对象则返回原始值
   if (!isObj || target[Keys.Raw]) return target;
   // 2. 返回已有代理
-  if (rawToProxy.has(target)) return rawToProxy.get(target);
+  const p = rawToProxy.get(target);
+  if (p) return p;
 
   // 每个对象维护自己的 cells 闭包
   const cells = new Map<any, Signal>();
@@ -61,12 +62,13 @@ export const deepSignal = <T>(target: T, scope: Signal, deep = true) => {
       }
 
       // 已有对应 Signal
-      if (cells.has(prop)) {
-        return cells.get(prop).v;
+      let s: Signal = cells.get(prop);
+      if (s) {
+        return s.v;
       }
 
       const wrappedValue = deep ? deepSignal(value, scope) : value;
-      const s = Signal.create(wrappedValue, {
+      s = Signal.create(wrappedValue, {
         scheduler: Scheduler.Sync,
         isScope: false,
         scope
@@ -83,8 +85,8 @@ export const deepSignal = <T>(target: T, scope: Signal, deep = true) => {
       batch.start();
       const success = Reflect.set(obj, prop, value, receiver);
       // 已有对应 Signal，更新 signal 值
-      if (cells.has(prop)) {
-        const cell = cells.get(prop);
+      const cell = cells.get(prop);
+      if (cell) {
         cell.v = deep ? deepSignal(value, scope) : value;
       }
 
@@ -103,10 +105,8 @@ export const deepSignal = <T>(target: T, scope: Signal, deep = true) => {
       if ((targetIsStore && isIgnoreKey(obj.constructor[StoreIgnoreKeys], prop)) || typeof obj[prop] === 'function') {
         return Reflect.deleteProperty(obj, prop);
       }
-      if (cells.has(prop)) {
-        // 2. 从 Map 中移除，切断引用，允许 GC 回收这个 $() 实例
-        cells.delete(prop);
-      }
+      // 2. 从 Map 中移除，切断引用，允许 GC 回收这个 $() 实例
+      cells.delete(prop);
       triggerIter(obj, prop, undefined, proxy);
       return Reflect.deleteProperty(obj, prop);
     },
@@ -179,11 +179,12 @@ function handleGetterAsComputed(
   cells: Map<any, Signal>,
   scope: Signal
 ) {
-  if (cells.has(prop)) {
-    return cells.get(prop).v;
+  let s = cells.get(prop);
+  if (s) {
+    return s.v;
   }
 
-  const s = Signal.create(null, {
+  s = Signal.create(null, {
     customPull: () => Reflect.get(obj, prop, receiver),
     scheduler: Scheduler.Sync,
     isScope: false,
@@ -240,8 +241,9 @@ const arrayMethodReWrites: any = {};
         args[0] = value[Keys.Raw];
         result = fn.call(that, ...args);
       }
-      if (rawToProxy.has(value)) {
-        args[0] = rawToProxy.get(value);
+      const p = rawToProxy.get(value);
+      if (p) {
+        args[0] = p;
         result = fn.call(that, ...args);
       }
     }

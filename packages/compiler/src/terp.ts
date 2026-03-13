@@ -36,7 +36,7 @@ export class Interpreter {
     // 首屏渲 app 组件需要创建对象
     this.rootComponent = componentNode;
 
-    this.tokenizer.consume();
+    this.tokenizer.nextToken();
     const stack = new MultiTypeStack<StackItem>();
     stack.push({ node: root, prev: null }, NodeSort.Real);
     stack.push(
@@ -64,7 +64,7 @@ export class Interpreter {
       const token = this.tokenizer.token;
       // 下沉，创建 child0
       if (token.type & TokenType.Indent) {
-        const INDENT = this.tokenizer.consume();
+        this.tokenizer.nextToken(); // INDENT
         const isLogicNode = this.isLogicNode(ctx.current);
         stack.push(
           {
@@ -105,7 +105,7 @@ export class Interpreter {
       }
       // 下一个 token 是 Dedent
       if (this.tokenizer.token.type & TokenType.Dedent) {
-        const DEDENT = this.tokenizer.consume();
+        this.tokenizer.nextToken(); // DEDENT
         const [{ node: parent, prev }, sort] = stack.pop();
         // 弹出原生节点，找最近的 ctx.realParent
         if (!parent.__logicType) {
@@ -253,7 +253,7 @@ export class Interpreter {
     } else {
       _node = this.createNode(value);
     }
-    this.tokenizer.consume();
+    this.tokenizer.nextToken();
     this.headerLine(_node);
     this.extensionLines(_node);
     if (_node.__logicType === FakeType.Component) {
@@ -264,7 +264,7 @@ export class Interpreter {
     return _node;
   }
   getData() {
-    const {node} = this.ctx.stack.peekByType(NodeSort.CtxProvider)
+    const { node } = this.ctx.stack.peekByType(NodeSort.CtxProvider);
     return node.data || node.owner.data;
   }
 
@@ -367,7 +367,8 @@ export class Interpreter {
   condDeclaration(ctx: ProgramCtx) {
     const { prevSibling } = ctx;
     const snapbackUp = this.tokenizer.snapshot();
-    const keyWord = this.tokenizer.consume();
+    const keyWord = this.tokenizer.token;
+    this.tokenizer.nextToken(); // keyWord
     const noSelfCond = this.tokenizer.token.type === TokenType.NewLine;
 
     const [hookType, value] = this.tokenizer._hook({});
@@ -466,9 +467,9 @@ export class Interpreter {
         if (val) {
           if (ifNode.isFirstRender) {
             if (!noSelfCond) {
-              const condition = this.tokenizer.consume();
+              this.tokenizer.nextToken(); // condition
             }
-            const newLine = this.tokenizer.consume();
+            this.tokenizer.nextToken(); // NEWLINE
           }
           // 更新渲染
           else {
@@ -492,12 +493,12 @@ export class Interpreter {
         else {
           if (ifNode.isFirstRender) {
             if (noSelfCond) {
-              // 让 '/n‘ 能被跳过
+              // 让 '/n‘ 能被 skip 处理
               this.tokenizer.i = this.tokenizer.i - 1;
               // else 时消费了一个 \n 导致 needDent 被置为 true
               this.tokenizer.needIndent = false;
             }
-            const skipStr = this.tokenizer.skip();
+            this.tokenizer.skip(); // skipStr
           }
           // 更新渲染，删除所有节点
           else {
@@ -524,18 +525,18 @@ export class Interpreter {
   extensionLines(_node: any) {
     while (1) {
       //  终止条件，下一行不是 pipe
-      if (!(this.tokenizer.token.type & TokenType.Pipe)) {
+      if ((this.tokenizer.token.type & TokenType.Pipe) === 0) {
         return;
       }
       // 开始解析 attributeList
-      const PIPE = this.tokenizer.consume();
+      this.tokenizer.nextToken(); // PIPE
       this.attributeList(_node);
       // 文件结束了，通常不会发生
-      if (!(this.tokenizer.token.type & TokenType.NewLine)) {
+      if ((this.tokenizer.token.type & TokenType.NewLine) === 0) {
         return;
       }
       // 换行
-      const NEWLINE = this.tokenizer.consume();
+      this.tokenizer.nextToken(); // NEWLINE
     }
   }
 
@@ -546,7 +547,7 @@ export class Interpreter {
    */
   headerLine(_node: any) {
     this.attributeList(_node);
-    const NEWLINE = this.tokenizer.consume();
+    this.tokenizer.nextToken(); // NEWLINE
   }
 
   /**
@@ -557,12 +558,12 @@ export class Interpreter {
    *
    * <attribute> ::= <key> = <value>
    * 1. 普通节点 执行 setProps 🪝
-   * 2. 组件节点 收集映射关系，或通过 effect 直接设值
+   * 2. 组件节点 收集映射关系，或 产生 computed
    */
   attributeList(_node: any) {
     let key: string, eq: any;
     const data = this.getData();
-    while (!(this.tokenizer.token.type & TokenType.NewLine)) {
+    while ((this.tokenizer.token.type & TokenType.NewLine) === 0) {
       // 取 key
       if (key == null) {
         key = this.tokenizer.token.value as any;
@@ -574,7 +575,7 @@ export class Interpreter {
       // 取 value
       else {
         const [hookType, value, hookI] = this.tokenizer._hook({});
-        const rawVal = Reflect.get(data[Keys.Raw], value);
+        const rawVal = data[Keys.Raw][value];
         const isFn = typeof rawVal === 'function';
         // 动态的要做成函数
         if (hookType === 'dynamic') {
@@ -597,7 +598,7 @@ export class Interpreter {
         key = null;
         eq = null;
       }
-      this.tokenizer.consume();
+      this.tokenizer.nextToken();
     }
   }
   config(opt: TerpConf) {
