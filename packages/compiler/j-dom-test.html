@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -14,6 +15,7 @@
   }
   </script>
 </head>
+
 <body>
   <div id="root"></div>
   <div id="root2"></div>
@@ -89,19 +91,19 @@
     update2 = () => {
       this.show2 = !this.show2;
     }
+    renderDeep = bobe`
+      div text={deep}
+      if {deep > 0}
+        {renderDeep} deep={deep - 1}
+    `;
 
     ui = bobe`
       header
         h1 text={name}
-        ${Deep} deep=100
         button style="cursor: pointer;" text={'show1:'+show1} onclick={update1}
         button style="cursor: pointer;" text={'show2:'+show2} onclick={update2}
         if {show1}
-          div text='show1'
-        if {show2}
-          div text='show2'
-        else
-          div text='show2-fail'
+          {renderDeep} deep=10
         nav
           ul
             li

@@ -1,5 +1,5 @@
 import { Tokenizer } from './tokenizer';
-import { $, effect, getPulling, Keys, runWithPulling, setPulling, shareSignal, Signal, Store } from 'aoye';
+import { $, deepSignal, effect, getPulling, Keys, runWithPulling, setPulling, shareSignal, Signal, Store } from 'aoye';
 import {
   BobeUI,
   ComponentNode,
@@ -217,19 +217,14 @@ export class Interpreter {
   declaration(ctx: ProgramCtx) {
     const [hookType, value] = this.tokenizer._hook({});
     let _node: any;
-
     if (value === 'if' || value === 'else' || value === 'fail') {
       return this.condDeclaration(ctx);
     } else if (hookType) {
       // 静态 1. Component，2. bobe 返回的 render 方法
       if (hookType === 'static') {
-        // 传组件 class
-        if (typeof value === 'function' && value.prototype instanceof Store) {
-          _node = this.componentDeclaration(value, ctx);
-        }
-        // 传组件片段
-        else if (typeof value === 'function') {
-          _node = this.fragmentDeclaration(value, ctx);
+        // 传组件 class 或 片段
+        if (typeof value === 'function') {
+          _node = this.componentOrFragmentDeclaration(value, ctx);
         }
         // 其余类型不允许静态插值
         else {
@@ -243,12 +238,7 @@ export class Interpreter {
       // 3. 返回  片段
       // TODO: 后续考虑动态组件
       else {
-        const data = this.getData();
-        const isKeyInsertion = Boolean(data[Keys.Raw][value]);
-
-        const fn = new Function('data', `let v;with(data){v=(${value})};return v`);
-
-        _node = this.createNode(value);
+        _node = this.componentOrFragmentDeclaration(value, ctx);
       }
     } else {
       _node = this.createNode(value);
@@ -256,29 +246,16 @@ export class Interpreter {
     this.tokenizer.nextToken();
     this.headerLine(_node);
     this.extensionLines(_node);
-    if (_node.__logicType === FakeType.Component) {
-      // 执行到此，token 为 组件兄弟节点，想模拟进入组件，需要 Indent
-      tap.once(TerpEvt.HandledComponentNode, node => (_node = node));
-      tap.emit(TerpEvt.AllAttrGot);
+    // 组件用完，切换回 真实node 的方法
+    if (_node.__logicType & TokenizerSwitcherBit) {
+      this.onePropParsed = this.oneRealPropParsed;
+      this.tokenizer = _node.tokenizer;
     }
     return _node;
   }
   getData() {
     const { node } = this.ctx.stack.peekByType(NodeSort.CtxProvider);
     return node.data || node.owner.data;
-  }
-
-  // TODO: 指定挂载位置
-  fragmentDeclaration(renderFragment: BobeUI, ctx: ProgramCtx) {
-    const data = this.getData();
-    const tokenizer = renderFragment.call(data, this.opt, { data: data, root: '', anchor: '' });
-    const fragmentNode: FragmentNode = {
-      __logicType: FakeType.Fragment,
-      realParent: null,
-      tokenizer,
-      data: null
-    };
-    return fragmentNode;
   }
 
   /**
@@ -317,19 +294,36 @@ export class Interpreter {
     }
   }
 
-  componentDeclaration(Component: typeof Store, ctx: ProgramCtx) {
+  oneRealPropParsed: Interpreter['onePropParsed'] = this.onePropParsed.bind(this);
+
+  componentOrFragmentDeclaration(ComponentOrRender: BobeUI | typeof Store | string, ctx: ProgramCtx) {
     // 先进行 attr 映射，或建立 signal 连接，才能开始 render
     // 必须等待 attr 解析完毕
-    const child = Component.new();
-    const componentNode: ComponentNode = {
-      __logicType: FakeType.Component,
+    let Component: typeof Store, render: BobeUI, child: any;
+    const data = this.getData();
+    // 如果是字符串，就去 父中取动态的 Component
+    if (typeof ComponentOrRender === 'string') {
+      ComponentOrRender = data[ComponentOrRender];
+    }
+
+    const isCC = (ComponentOrRender as any).prototype instanceof Store;
+    if (isCC) {
+      Component = ComponentOrRender as any;
+      child = Component.new();
+    } else {
+      render = ComponentOrRender as any;
+      // 使用原型链来继承 store 的数据
+      child = deepSignal({}, getPulling(), true);
+      Object.setPrototypeOf(child, data);
+    }
+
+    const node: ComponentNode = {
+      __logicType: isCC ? FakeType.Component : FakeType.Fragment,
       realParent: ctx.realParent,
       data: child,
-      tokenizer: null
+      tokenizer: render ? render(true) : (child['ui'] as BobeUI)(true)
     };
-
-    const prevOnePropParsed = this.onePropParsed;
-    this.onePropParsed = (data, node, key, value, valueIsMapKey, isFn, hookI) => {
+    this.onePropParsed = (data, _, key, value, valueIsMapKey, isFn, hookI) => {
       if (isFn) {
         child[Keys.Raw][key] = value;
       }
@@ -349,19 +343,8 @@ export class Interpreter {
         child[Keys.Raw][key] = value;
       }
     };
-    componentNode.realAfter = this.insertAfterAnchor(ctx);
-    const { realParent, prevSibling } = ctx;
-    tap.once(TerpEvt.AllAttrGot, () => {
-      // 执行 program 时需要挂载到 parent
-      const parent = realParent;
-      const prev = prevSibling;
-      this.onePropParsed = prevOnePropParsed;
-      const subTkr = (child['ui'] as BobeUI)(true);
-      componentNode.tokenizer = subTkr;
-      this.tokenizer = subTkr;
-      tap.emit(TerpEvt.HandledComponentNode, componentNode);
-    });
-    return componentNode;
+    node.realAfter = this.insertAfterAnchor(ctx);
+    return node;
   }
   // TODO: 优化代码逻辑，拆分 if elseif else
   condDeclaration(ctx: ProgramCtx) {
