@@ -311,10 +311,11 @@ export class Interpreter {
       Component = ComponentOrRender as any;
       child = Component.new();
     } else {
-      render = ComponentOrRender as any;
+      render = ComponentOrRender as BobeUI;
+      const boundStore = render.boundStore;
       // 使用原型链来继承 store 的数据
       child = deepSignal({}, getPulling(), true);
-      Object.setPrototypeOf(child, data);
+      Object.setPrototypeOf(child, boundStore);
     }
 
     const node: ComponentNode = {
@@ -337,6 +338,7 @@ export class Interpreter {
         const cells: Map<string, Signal> = meta.cells;
         const computed = $(value);
         cells.set(key, computed);
+        child[Keys.Raw][key] = undefined;
       }
       // 静态值
       else {

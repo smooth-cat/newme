@@ -11,6 +11,7 @@ export function bobe(fragments: TemplateStringsArray, ...values: any[]) {
     tokenizer.init(Array.from(fragments));
     return tokenizer;
   };
+  ui.boundStore = Store.Current;
   return ui;
 }
 
@@ -21,13 +22,13 @@ export function customRender(option: CustomRenderConf) {
     const store = Ctor.new();
     const tokenizer: Tokenizer = store['ui'](false);
     const terp = new Interpreter(tokenizer);
-    terp.config(option)
+    terp.config(option);
 
     const componentNode: ComponentNode = {
       __logicType: FakeType.Component,
       realParent: root,
       data: store,
-      tokenizer,
+      tokenizer
     };
 
     terp.program(root, componentNode);

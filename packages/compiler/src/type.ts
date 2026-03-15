@@ -99,7 +99,11 @@ export type ProgramCtx = {
 };
 
 /** 返回值是用户自定义的节点 */
-export type BobeUI = (isSub: boolean) => Tokenizer;
+export type BobeUI = {
+  /** 在哪个 Store 声明的 */
+  boundStore: Store;
+  (isSub: boolean): Tokenizer;
+};
 
 export type StackItem = {
   /** 插入到 prev 后 */
