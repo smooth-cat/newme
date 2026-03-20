@@ -23,7 +23,7 @@ export function dfs(root: Vertex, opt: Partial<DFSOpt> = {}) {
   const nextLineKey = isUp ? 'nextRecLine' : 'nextEmitLine';
   const reverseNodeKey = isUp ? 'downstream' : 'upstream';
 
-  while (1) {
+  while (true) {
     let notGoDeep = begin?.({
       node: node as Signal,
       lineFromUp: line,
@@ -38,7 +38,7 @@ export function dfs(root: Vertex, opt: Partial<DFSOpt> = {}) {
       continue;
     }
 
-    while (1) {
+    while (true) {
       const noGoSibling = complete?.({
         node: node as Signal,
         lineToDeep: line,
@@ -66,3 +66,103 @@ export function dfs(root: Vertex, opt: Partial<DFSOpt> = {}) {
     }
   }
 }
+
+
+const dfsUp = (root: Signal) => {
+  let node: Signal = root,
+    i = -1,
+    parent: Signal;
+  const stack: Line[] = [];
+  outer: do {
+    let noGoDeep = false;
+    // begin
+
+    /**
+     * 1. 已放弃节点， 或 scope，不做标记
+     * 2. scope 节点
+     */
+    const state = node.state,
+      recStart = node.recStart,
+      scheduler = node.scheduler;
+
+    if (recStart && !noGoDeep) {
+      // 下潜：记录来时的路
+      stack[++i] = recStart;
+      parent = node;
+      node = recStart.upstream as Signal;
+      noGoDeep = false;
+      continue;
+    }
+
+    while (true) {
+      // 上浮：通过 walked 找到父节点
+      const backLine = stack[i];
+
+      const nextLine = backLine.nextRecLine;
+
+      // 兄弟节点，父节点不变
+      if (nextLine) {
+        node = nextLine.upstream as Signal;
+        stack[i] = nextLine;
+        break;
+      }
+
+      // 回溯到父节点继续上浮循环
+      node = parent;
+      if (i === 0) {
+        break outer;
+      } else {
+        parent = stack[--i].downstream;
+      }
+    }
+  } while (true);
+};
+const dfsDown = (root: Signal) => {
+  let node: Signal = root,
+    i = -1,
+    parent: Signal;
+  const stack: Line[] = [];
+  outer: do {
+    let noGoDeep = false;
+    // begin
+
+    /**
+     * 1. 已放弃节点， 或 scope，不做标记
+     * 2. scope 节点
+     */
+    const state = node.state,
+      emitStart = node.emitStart,
+      scheduler = node.scheduler;
+
+    if (emitStart && !noGoDeep) {
+      // 下潜：记录来时的路
+      stack[++i] = emitStart;
+      parent = node;
+      node = emitStart.downstream as Signal;
+      noGoDeep = false;
+      continue;
+    }
+
+    while (true) {
+      // 上浮：通过 walked 找到父节点
+      const backLine = stack[i];
+
+      const nextLine = backLine.nextEmitLine;
+
+      // 兄弟节点，父节点不变
+      if (nextLine) {
+        node = nextLine.downstream as Signal;
+        stack[i] = nextLine;
+        break;
+      }
+
+      // 回溯到父节点继续上浮循环
+      node = parent;
+      if (i === 0) {
+        break outer;
+      } else {
+        parent = stack[--i].upstream;
+      }
+    }
+  } while (true);
+};

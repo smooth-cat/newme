@@ -67,17 +67,16 @@ export class Line {
 
     const downNode = downstream as Signal;
     // 有兄弟外部引用
-    if(prevOutLink) {
+    if (prevOutLink) {
       prevOutLink.nextOutLink = nextOutLink;
-    } 
-    if(nextOutLink) {
+    }
+    if (nextOutLink) {
       nextOutLink.prevOutLink = prevOutLink;
     }
     // 是 first 节点
-    if(downNode.scope && downNode.scope.outLink === line) {
+    if (downNode.scope && downNode.scope.outLink === line) {
       downNode.scope.outLink = nextOutLink;
     }
-
 
     /** 上游节点发出的线 前一条 关联 后一条 */
     if (prevEmitLine) {
@@ -131,7 +130,7 @@ export class Line {
   }
 
   /** 上游节点 连 link */
-  static emit_line(upstream: Vertex, line: Line) {
+  static emit_line(upstream: Signal, line: Line) {
     if (!upstream.emitStart) {
       upstream.emitStart = line;
     }
@@ -139,7 +138,7 @@ export class Line {
     line.upstream = upstream;
   }
   /** 下游节点 连 link */
-  static rec_line(downstream: Vertex, line: Line) {
+  static rec_line(downstream: Signal, line: Line) {
     if (!downstream.recStart) {
       downstream.recStart = line;
     }
@@ -176,14 +175,14 @@ export class Line {
   }
 
   /** 上游顶点 */
-  public upstream: Vertex = null;
+  public upstream: Signal = null;
   /** 上游节点 发出的上一条线 */
   public prevEmitLine: Line = null;
   /** 上游节点 发出的下一条线 */
   public nextEmitLine: Line = null;
 
   /** 下游顶点 */
-  public downstream: Vertex = null;
+  public downstream: Signal = null;
   /** 下游节点 接收的上一条线 */
   public prevRecLine: Line = null;
   /** 下游节点 接收的下一条线 */

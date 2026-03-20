@@ -5,15 +5,14 @@ import { Signal } from './signal';
 import { CreateScope, Dispose, Getter, Mix, SignalType, ValueDiff } from './type';
 import { deepSignal } from './deep-signal';
 
-export { Signal } from './signal';
+export { Signal, batchEnd, batchStart } from './signal';
 export { deepSignal, shareSignal } from './deep-signal';
 export { Scheduler, registerScheduler } from './schedule';
 export { TaskQueue } from './task';
 export { runWithPulling, clean, setPulling, getPulling } from './scope';
 export * from './store';
 export * from './type';
-export { batch } from './batch-set';
-export { toRaw } from './util'
+export { toRaw } from './util';
 const DefaultCustomSignalOpt = {
   /** 三种模式
    * 1. auto:   根据值类型自动判断 默认

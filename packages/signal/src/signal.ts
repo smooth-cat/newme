@@ -4,61 +4,87 @@ import { Line } from './line';
 import { _scheduler } from './schedule';
 import { runWithPulling, unlinkRecWithScope } from './scope';
 import { SignalOpt, Vertex } from './type';
-import { batch } from './batch-set';
+const markDeep = (root: Signal) => {
+  let node: Signal = root,
+    i = -1,
+    parent: Signal;
+  const stack: Line[] = [];
+  outer: do {
+    let noGoDeep = false;
+    // begin
 
-const markDeep = (signal: Signal) => {
-  let level = 0,
-    updatedSchedulers = new Set<string>();
-  dfs(signal, {
-    isUp: false,
-    begin: ({ node }) => {
-      /**
-       * 1. 已放弃节点， 或 scope，不做标记
-       * 2. scope 节点
-       */
-      if (node.isDisabled()) {
-        return true;
-      }
+    /**
+     * 1. 已放弃节点， 或 scope，不做标记
+     * 2. scope 节点
+     */
+    const state = node.state,
+      emitStart = node.emitStart,
+      scheduler = node.scheduler;
+    if (
+      (node.scope && node.scope.state & State.ScopeAbort) ||
+      // 是 scope 节点，且处于 ready 状态，不需要重复执行
+      node.state & ScopeExecuted
+    ) {
+      noGoDeep = true;
+    } else {
+      const inPullingArea = state & State.Pulling;
+      const isEffect = parent !== undefined;
+      const isLeaf = !emitStart || emitStart.downstream === node.scope;
 
-      const inPullingArea = node.state & State.Pulling;
-      /** 在 Pulling 结束后将 PullingUnknown 转为 Unknown */
-      const Unknown = inPullingArea ? State.PullingUnknown : State.Unknown;
-
-      const isEffect = level > 0;
-      // 没有下游，或者下游是 scope
-      const isLeaf = !node.emitStart || node.emitStart.downstream === node.scope;
+      // 1. 确定状态标记位
+      // 如果在 Pulling 区域，Effect 标记为 PullingUnknown，否则为 Unknown/Dirty
       if (isEffect) {
-        node.state |= Unknown;
-      }
-      // 源节点是叶子节点，不做标记，后续可以通过 get 重新拉取到新值
-      else if (!isLeaf) {
+        node.state |= inPullingArea ? State.PullingUnknown : State.Unknown;
+      } else if (!isLeaf) {
         node.state |= State.Dirty;
       }
 
-      // 当前 effect 正在执行，不收集到 Queue
-      if (isLeaf && isEffect && !inPullingArea) {
-        const key = node.scheduler;
-        const instance = _scheduler[key];
-        const item = instance.addEffect(node);
-        if (!instance.firstEffectItem) {
-          instance.firstEffectItem = item;
-        }
-        instance.lastEffectItem = item;
-        updatedSchedulers.add(key);
-      }
-      level++;
+      // 2. 处理叶子节点（Effect 调度与截断）
       if (isLeaf) {
-        return true;
+        noGoDeep = true;
+
+        // 只有非 Pulling 状态下的 Effect 节点需要加入调度队列
+        if (isEffect && !inPullingArea) {
+          const instance = _scheduler[scheduler];
+          const item = instance.addEffect(node);
+
+          instance.firstEffectItem ??= item;
+          instance.lastEffectItem = item;
+        }
       }
     }
-  });
-  // batch 操作通过 endBatch 触发
-  if (batch.inBatch()) return;
 
-  for (const key in _scheduler) {
-    const instance = _scheduler[key];
-    instance.endSet();
-  }
+    if (emitStart && !noGoDeep) {
+      // 下潜：记录来时的路
+      stack[++i] = emitStart;
+      parent = node;
+      node = emitStart.downstream as Signal;
+      noGoDeep = false;
+      continue;
+    }
+
+    while (true) {
+      // 上浮：通过 walked 找到父节点
+      const backLine = stack[i];
+
+      const nextLine = backLine.nextEmitLine;
+
+      // 兄弟节点，父节点不变
+      if (nextLine) {
+        node = nextLine.downstream as Signal;
+        stack[i] = nextLine;
+        break;
+      }
+
+      // 回溯到父节点继续上浮循环
+      node = parent;
+      if (i === 0) {
+        break outer;
+      } else {
+        parent = stack[--i].upstream;
+      }
+    }
+  } while (true);
 };
 
 const pullingPostprocess = (node: Signal) => {
@@ -122,7 +148,7 @@ export class Signal<T = any> implements Vertex {
   pullRecurse(shouldLink = true) {
     G.PullingRecurseDeep++;
     const downstream = G.PullingSignal;
-    this.linkWhenPull(downstream);
+    this.linkWhenPull(downstream, shouldLink);
     try {
       if (this.version === G.version) {
         return this.value;
@@ -160,12 +186,12 @@ export class Signal<T = any> implements Vertex {
     }
   }
 
-  linkWhenPull(downstream: Signal) {
+  linkWhenPull(downstream: Signal, shouldLink: boolean) {
     const isScope = this.state & State.IsScope;
     if (
-      this !== downstream &&
       // 2. 有下游
       downstream &&
+      shouldLink &&
       // 3. 下游是 watcher 不是 watch，或 是watcher 但 当前是 scope
       ((downstream.state & State.LinkScopeOnly) === 0 || isScope) &&
       /**4. scope 只能被一个下游节点管理，就是初始化它的那个下游节点
@@ -255,7 +281,7 @@ export class Signal<T = any> implements Vertex {
     }
     // 此处要建立执行 pullDeep 的 signal 和 downstream 的连接
     const downstream = G.PullingSignal;
-    this.linkWhenPull(downstream);
+    this.linkWhenPull(downstream, true);
     return this.value;
   }
 
@@ -299,7 +325,19 @@ export class Signal<T = any> implements Vertex {
     // 手动设值后，采用默认拉取，能拉取到设置的值，拉取完成后在替换回 customPull
     this.pull = this.DEFAULT_PULL;
     G.version++;
-    markDeep(this as any);
+    if (this.emitStart) {
+      markDeep(this as any);
+      if (batchDeep === 0) {
+        this.scheduleEffect();
+      }
+    }
+  }
+
+  scheduleEffect() {
+    for (const key in _scheduler) {
+      const instance = _scheduler[key];
+      instance.endSet();
+    }
   }
 
   /** 返回值为 true 表示已处理 */
@@ -312,9 +350,22 @@ export class Signal<T = any> implements Vertex {
       // scope 被取消
       (this.scope && this.scope.state & State.ScopeAbort) ||
       // 是 scope 节点，且处于 ready 状态，不需要重复执行
-      (this.state & State.IsScope && this.state & ScopeExecuted)
+      this.state & ScopeExecuted
     );
   }
   /** 记录当前 effect 中 clean */
   clean: () => void = null;
+}
+
+let batchDeep = 0;
+export function batchStart() {
+  batchDeep++;
+}
+export function batchEnd() {
+  if (--batchDeep) return;
+  // 完成 batch 后开始调度
+  for (const key in _scheduler) {
+    const instance = _scheduler[key];
+    instance.endSet();
+  }
 }

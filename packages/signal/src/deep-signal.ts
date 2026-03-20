@@ -2,10 +2,9 @@ import { isNatureNumStr } from 'bobe-shared';
 import { G, rawToProxy } from './global';
 import { Scheduler } from './schedule';
 import { runWithPulling } from './scope';
-import { Signal } from './signal';
+import { Signal, batchEnd, batchStart  } from './signal';
 import { IsStore, Key, Keys, StoreIgnoreKeys } from './type';
 import { toRaw } from './util';
-import { batch } from './batch-set';
 
 export const deepSignal = <T>(target: T, scope: Signal, deep = true) => {
   const isObj = typeof target === 'object' && target !== null;
@@ -82,7 +81,7 @@ export const deepSignal = <T>(target: T, scope: Signal, deep = true) => {
         return Reflect.set(obj, prop, value, receiver);
       }
       // 数组项 set 可能出现 Iterator 设置，用 batch 避免 effect 多次执行
-      batch.start();
+      batchStart();
       const success = Reflect.set(obj, prop, value, receiver);
       // 已有对应 Signal，更新 signal 值
       const cell = cells.get(prop);
@@ -95,7 +94,7 @@ export const deepSignal = <T>(target: T, scope: Signal, deep = true) => {
       } else {
         triggerIter(obj, prop, value, receiver);
       }
-      batch.end();
+      batchEnd();
       // 保持原始对象干净
       return success;
     },
@@ -219,12 +218,12 @@ const arrayMethodReWrites: any = {};
 /*----------------- 增删移 增加 __Iterator Set ✅ -----------------*/
 ['pop', 'push', 'shift', 'splice', 'unshift', 'copyWithin', 'reverse', 'fill'].forEach(key => {
   arrayMethodReWrites[key] = function (...args: any[]) {
-    batch.start();
+    batchStart();
     const fn = Array.prototype[key];
     // 不会进行依赖收集，但是会触发 set
     const res = runWithPulling(() => fn.call(this, ...args), null);
     this[Keys.Iterator] = (this[Keys.Raw][Keys.Iterator] || 0) + 1;
-    batch.end();
+    batchEnd();
     return res;
   };
 });
