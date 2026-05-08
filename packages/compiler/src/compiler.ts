@@ -31,7 +31,7 @@ export class Compiler {
   ) {}
 
   private addError(code: ParseErrorCode, message: string, loc: SourceLocation, node?: BaseNode) {
-    if(node) {
+    if (node) {
       node.hasError = true;
     }
     this.errors.push({ code, message, loc });
@@ -144,9 +144,9 @@ export class Compiler {
     this.tokenizer.nextToken(); // 跳过标签名
 
     // 解析属性
-    const props: Property[] = this.headerLineAndExtensions();
     node.type = NodeType.Component;
     node.componentName = name;
+    const props: Property[] = this.headerLineAndExtensions();
     node.props = props;
     this.hooks.parseComponentNode?.propsAdded?.call(this, node);
 
@@ -182,9 +182,9 @@ export class Compiler {
     this.tokenizer.nextToken(); // 跳过标签名
 
     // 解析属性
-    const props: Property[] = this.headerLineAndExtensions();
     node.type = NodeType.Element;
     node.tagName = tagName;
+    const props: Property[] = this.headerLineAndExtensions();
     node.props = props;
     this.hooks.parseElementNode?.propsAdded?.call(this, node);
 
@@ -316,24 +316,20 @@ export class Compiler {
   private headerLineAndExtensions(): Property[] {
     const props: Property[] = [];
 
-    // 解析首行属性
-    props.push(...this.attributeList());
-
-    // 跳过换行符
-    if (this.tokenizer.token.type & TokenType.NewLine) {
-      this.tokenizer.nextToken();
-    }
-
-    // 解析扩展行属性
-    while (this.tokenizer.token.type & TokenType.Pipe) {
-      this.tokenizer.nextToken(); // 跳过管道符
+    do {
       props.push(...this.attributeList());
 
       // 跳过换行符
       if (this.tokenizer.token.type & TokenType.NewLine) {
         this.tokenizer.nextToken();
       }
-    }
+      // 不是 pipe 就结束
+      if ((this.tokenizer.token.type & TokenType.Pipe) === 0) {
+        break;
+      } else {
+        this.tokenizer.nextToken();
+      }
+    } while (true);
 
     return props;
   }
@@ -381,13 +377,19 @@ export class Compiler {
         node.key.loc ?? this.tokenizer.emptyLoc(),
         node
       );
-      node.loc.start = node.key.loc.start;
-      node.loc.end = node.key.loc.end;
-      node.loc.source = this.tokenizer.code.slice(node.loc.start.offset, node.loc.end.offset);
+      this.handleOnlyKeyLoc(node);
       return node;
     }
 
     const valueToken = this.tokenizer.nextToken(); // 跳过等号
+    // 换行，下面缩进代码应该是子块
+    if (valueToken.type & TokenType.NewLine) {
+      this.tokenizer.nextToken(); // 跳过换行符，下一个应该是缩进符
+      node.value = this.parsePropertyInlineFragment();
+      this.handleKeyValueLoc(node);
+      return node;
+    }
+
     if ((valueToken.type & ValueTokenType) === 0) {
       this.addError(
         ParseErrorCode.MISSING_PROP_ASSIGNMENT,
@@ -395,19 +397,27 @@ export class Compiler {
         valueToken.loc ?? this.tokenizer.emptyLoc(),
         node
       );
-      
-      node.loc.start = node.key.loc.start;
-      node.loc.end = node.key.loc.end;
-      node.loc.source = this.tokenizer.code.slice(node.loc.start.offset, node.loc.end.offset);
+
+      this.handleOnlyKeyLoc(node);
       return node;
     }
 
     node.value = this.parsePropertyValue();
     this.tokenizer.nextToken();
+    this.handleKeyValueLoc(node);
+    return node;
+  }
+
+  handleOnlyKeyLoc(node: Property) {
+    node.loc.start = node.key.loc.start;
+    node.loc.end = node.key.loc.end;
+    node.loc.source = this.tokenizer.code.slice(node.loc.start.offset, node.loc.end.offset);
+  }
+
+  handleKeyValueLoc(node: Property) {
     node.loc.start = node.key.loc.start;
     node.loc.end = node.value.loc.end;
     node.loc.source = this.tokenizer.code.slice(node.loc.start.offset, node.loc.end.offset);
-    return node;
   }
 
   /**
@@ -442,6 +452,16 @@ export class Compiler {
     node.value = value;
     return node;
   }
+
+  @NodeHook
+  @NodeLoc
+  parsePropertyInlineFragment(node?: PropertyValue) {
+    const list = this.handleChildren();
+    node.type = NodeType.StaticValue;
+    node.value = list;
+    return node;
+  }
+
   /**
    * 根据值类型创建名称
    */

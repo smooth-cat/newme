@@ -19,7 +19,7 @@ import {
   toRaw
 } from 'aoye';
 import {
-  BobeUI,
+  UI,
   ComponentNode,
   CondBit,
   IfNode,
@@ -817,7 +817,7 @@ export class Interpreter {
 
   oneRealPropParsed: Interpreter['onePropParsed'] = this.onePropParsed.bind(this);
 
-  componentOrFragmentDeclaration(ComponentOrRender: BobeUI | typeof Store | InlineFragment, ctx: ProgramCtx) {
+  componentOrFragmentDeclaration(ComponentOrRender: UI | typeof Store | InlineFragment, ctx: ProgramCtx) {
     // 先进行 attr 映射，或建立 signal 连接，才能开始 render
     // 必须等待 attr 解析完毕
     let Component: typeof Store,
@@ -849,7 +849,7 @@ export class Interpreter {
         'useDedentAsEof'
       ]);
     } else {
-      const render = ComponentOrRender as BobeUI;
+      const render = ComponentOrRender as UI;
       const boundStore = render.boundStore;
       // 使用原型链来继承 store 的数据
       child = deepSignal({}, getPulling(), true);

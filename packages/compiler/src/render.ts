@@ -1,17 +1,17 @@
-import { Store } from "aoye";
-import { Interpreter } from "./terp";
-import { Tokenizer } from "./tokenizer";
-import { BobeUI, ComponentNode, CustomRenderConf, FakeType } from "./type";
+import { Store } from 'aoye';
+import { Interpreter } from './terp';
+import { Tokenizer } from './tokenizer';
+import { UI, ComponentNode, CustomRenderConf, FakeType } from './type';
 
-export function bobe(fragments: TemplateStringsArray, ...values: any[]) {
-  const ui: BobeUI = function ui(isSub: boolean) {
+export function bobe<T extends Record<any, any> = any>(fragments: TemplateStringsArray, ...values: any[]) {
+  const ui: UI<T> = function ui(isSub: boolean) {
     const tokenizer = new Tokenizer(({ i }) => {
       return values[i];
     }, isSub);
     tokenizer.init(Array.from(fragments));
     return tokenizer;
   };
-  ui.boundStore = Store.Current;
+  ui.boundStore = Store.Current as any;
   return ui;
 }
 

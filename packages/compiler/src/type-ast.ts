@@ -93,7 +93,7 @@ type PropertyValue = StaticValue | DynamicValue;
 // 静态值（使用NodeType.StaticValue）
 interface StaticValue extends BaseNode {
   type: NodeType.StaticValue;
-  value: string | number | boolean;
+  value: string | number | boolean | TemplateNode[];
 }
 
 // 动态值（JS表达式）（使用NodeType.DynamicValue）

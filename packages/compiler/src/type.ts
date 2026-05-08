@@ -169,9 +169,9 @@ export type ProgramCtx = {
 };
 
 /** 返回值是用户自定义的节点 */
-export type BobeUI = {
+export type UI<T = any> = {
   /** 在哪个 Store 声明的 */
-  boundStore: Store;
+  boundStore: T;
   (isSub: boolean): Tokenizer;
 };
 

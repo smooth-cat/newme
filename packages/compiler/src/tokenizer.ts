@@ -273,7 +273,9 @@ export class Tokenizer {
       }
       outer: while (1) {
         if (this.needIndent) {
+          this.locStart();
           this.dent();
+          this.locEnd();
           // 遍历到当前标识符非 空白为止
         } else {
           const char = this.code[this.i];
@@ -282,29 +284,25 @@ export class Tokenizer {
             case ' ':
               // skip, 缩进通过 \n 匹配来激活 needIndent
               break;
-            // 找后续所有 newLine
-            case '\n':
-              this.newLine();
-              // 回车后需要判断缩进
-              this.needIndent = true;
-              break;
-            case '=':
-              this.assignment();
-              break;
-            case '|':
-              this.pipe();
-              break;
-            case ';':
-              this.setToken(TokenType.Semicolon, ';');
-              break;
             /*----------------- 需要 loc 的 token -----------------*/
             default:
-              if (__IS_COMPILER__) {
-                this.preI = this.i;
-                this.preCol = this.column;
-                this.needLoc = true;
-              }
+              this.locStart();
               switch (char) {
+                // 找后续所有 newLine
+                case '\n':
+                  this.newLine();
+                  // 回车后需要判断缩进
+                  this.needIndent = true;
+                  break;
+                case '=':
+                  this.assignment();
+                  break;
+                case '|':
+                  this.pipe();
+                  break;
+                case ';':
+                  this.setToken(TokenType.Semicolon, ';');
+                  break;
                 case '/':
                   this.comment();
                   break;
@@ -329,9 +327,7 @@ export class Tokenizer {
                   }
                   break;
               }
-              if (__IS_COMPILER__) {
-                this.needLoc = false;
-              }
+              this.locEnd();
               break;
           }
           // 指向下一个字符
@@ -350,6 +346,20 @@ export class Tokenizer {
       this.handledTokens.push(this.token);
     }
   }
+
+  locStart() {
+    if (__IS_COMPILER__) {
+      this.preCol = this.column;
+      this.preI = this.i;
+      this.needLoc = true;
+    }
+  }
+  locEnd() {
+    if (__IS_COMPILER__) {
+      this.needLoc = false;
+    }
+  }
+
   getComment() {
     let value = '/';
     let nextC = this.code[this.i + 1];
@@ -371,11 +381,7 @@ export class Tokenizer {
     // this.next(); // 设置当前字符为 /n
   }
   condExp() {
-    if (__IS_COMPILER__) {
-      this.preCol = this.column;
-      this.preI = this.i;
-      this.needLoc = true;
-    }
+    this.locStart();
 
     let value = '';
     this.token = null;
@@ -393,9 +399,7 @@ export class Tokenizer {
 
     this.setToken(TokenType.Identifier, trimmed ? trimmed : true, 0);
     this.handledTokens.push(this.token);
-    if (__IS_COMPILER__) {
-      this.needLoc = false;
-    }
+    this.locEnd();
     return this.token;
   }
   isEol(i: number) {
@@ -409,11 +413,7 @@ export class Tokenizer {
    * @returns {boolean} 是否含有 key
    */
   public jsExp() {
-    if (__IS_COMPILER__) {
-      this.preCol = this.column;
-      this.preI = this.i;
-      this.needLoc = true;
-    }
+    this.locStart();
 
     this.token = null;
     let value = '';
@@ -429,9 +429,7 @@ export class Tokenizer {
     }
     this.setToken(TokenType.Identifier, value, 0);
     this.handledTokens.push(this.token);
-    if (__IS_COMPILER__) {
-      this.needLoc = false;
-    }
+    this.locEnd();
     return this.token;
   }
 
@@ -635,7 +633,7 @@ export class Tokenizer {
     const prevLen = this.dentStack[this.dentStack.length - 1];
     if (currLen > prevLen) {
       this.dentStack.push(currLen);
-      this.setToken(TokenType.Indent, currLen);
+      this.setToken(TokenType.Indent, currLen, 0);
       return indentHasLen;
     }
     if (currLen < prevLen) {
@@ -654,7 +652,7 @@ export class Tokenizer {
         }
         this.dentStack.pop();
         if (!this.token) {
-          this.setToken(TokenType.Dedent, String(expLen));
+          this.setToken(TokenType.Dedent, String(expLen), 0);
         }
         // 多余的 dent 缓存在 waitingTokens
         else {

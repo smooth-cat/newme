@@ -14,9 +14,10 @@
     }
   }
   </script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"
-    integrity="sha512-v2CJ7UaYy4JwqLDIrZUI/4hqeoQieOmAZNXBeQyjo21dadnwR+8ZaIJVT8EE2iyI61OV8e6M8PP2/4hpQINQ/g=="
-    crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script
+  src="https://code.jquery.com/jquery-3.7.1.min.js"
+  integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo="
+  crossorigin="anonymous"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
   <script>hljs.highlightAll();</script>
@@ -26,14 +27,18 @@
   <button id="out">showOuter = <span id="out-bool"></span></button>
   <button id="in">showInner = <span id="in-bool"></span></button>
   k1：<input id="k1" />
+  <button id="copy">Copy</button>
   <pre><code id="output" class="language-json"></code></pre>
 </body>
 <script type="module">
   import { Compiler, Tokenizer } from 'bobe';
   const code = `
     h2 text={"测\n试"} // 注释
+    {fragment} deep=10 header=
+      h1 text="头部"
+    |
+      div text="默认children"
     input data-id="456" value={value} oninput={oninput} onkeyup={onkeyup}
-    {fragment} deep=10
     if show
       div
         {'哈哈哈'}  
@@ -92,6 +97,20 @@
     }
     return newNode;
   }
+
+  $('#copy').on('click', () => {
+    const codeEl = document.getElementById('output');
+    const range = document.createRange();
+    range.selectNodeContents(codeEl);
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+    document.execCommand('copy');
+    selection.removeAllRanges();
+    const $btn = $('#copy');
+    $btn.text('Copied!');
+    setTimeout(() => $btn.text('Copy'), 1500);
+  });
 </script>
 
 </html>
